@@ -144,15 +144,6 @@ function markdownToTypst(markdown, metadata) {
         } else if (line.startsWith('#### ')) {
             typst += `==== ${line.substring(5)}\n\n`;
         }
-        // Bold and italic
-        else if (line.includes('**') || line.includes('*') || line.includes('_')) {
-            // Bold: ** in markdown becomes * in Typst
-            line = line.replace(/\*\*(.+?)\*\*/g, '*$1*');
-            // Italic: single * in markdown becomes _ in Typst (after bold is processed)
-            // This simple approach handles most cases
-            line = line.replace(/([^*]|^)\*([^*]+?)\*([^*]|$)/g, '$1_$2_$3');
-            typst += line + '\n\n';
-        }
         // Lists
         else if (line.match(/^\s*[-*]\s/)) {
             typst += line.replace(/^\s*[-*]\s/, '- ') + '\n';
@@ -160,17 +151,20 @@ function markdownToTypst(markdown, metadata) {
         else if (line.match(/^\s*\d+\.\s/)) {
             typst += line.replace(/^\s*\d+\.\s/, '+ ') + '\n';
         }
-        // Links
-        else if (line.includes('[') && line.includes('](')) {
-            line = line.replace(/\[(.+?)\]\((.+?)\)/g, '#link("$2")[$1]');
-            typst += line + '\n\n';
-        }
         // Empty lines
         else if (line.trim() === '') {
             typst += '\n';
         }
-        // Regular paragraphs
+        // Regular paragraphs (may contain formatting)
         else {
+            // Process inline formatting
+            // Bold: ** in markdown becomes * in Typst
+            line = line.replace(/\*\*(.+?)\*\*/g, '*$1*');
+            // Italic: single * in markdown becomes _ in Typst
+            line = line.replace(/\*(.+?)\*/g, '_$1_');
+            // Links
+            line = line.replace(/\[(.+?)\]\((.+?)\)/g, '#link("$2")[$1]');
+            
             typst += line + '\n\n';
         }
     }
@@ -208,9 +202,21 @@ async function initTypstWasm() {
 /**
  * Create a minimal PDF (placeholder for actual Typst compilation)
  */
+/**
+ * Create a minimal PDF (placeholder for actual Typst compilation)
+ * 
+ * This generates a simple PDF with a basic structure for demonstration purposes.
+ * In production, this would be replaced by actual Typst WASM compilation.
+ * 
+ * PDF Structure:
+ * - Object 1: Catalog (root of document)
+ * - Object 2: Pages tree (collection of pages)
+ * - Object 3: Single page (8.5x11 inches = 612x792 points)
+ * - Object 4: Resources (font definitions)
+ * - Object 5: Content stream (text positioning and display)
+ */
 function createMinimalPDF(content) {
-    // This is a minimal PDF structure for demonstration
-    // In production, Typst WASM would generate the actual PDF
+    // PDF version 1.4 for broad compatibility
     const pdfHeader = '%PDF-1.4\n';
     const pdfContent = `
 1 0 obj
