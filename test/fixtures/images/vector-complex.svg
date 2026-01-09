@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#339af0"/>
+      <stop offset="100%" stop-color="#f06595"/>
+    </linearGradient>
+
+    <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="4" cy="4" r="2" fill="rgba(255,255,255,0.6)"/>
+    </pattern>
+
+    <clipPath id="clip">
+      <rect x="40" y="40" width="560" height="280" rx="24"/>
+    </clipPath>
+
+    <path id="wave" d="M 60 240 C 140 140, 260 340, 340 240 S 540 140, 620 240"/>
+  </defs>
+
+  <rect x="0" y="0" width="640" height="360" fill="url(#grad)"/>
+
+  <g clip-path="url(#clip)">
+    <rect x="40" y="40" width="560" height="280" fill="rgba(0,0,0,0.15)"/>
+    <rect x="40" y="40" width="560" height="280" fill="url(#dots)" opacity="0.35"/>
+
+    <g transform="translate(0,0)">
+      <use href="#wave" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+      <use href="#wave" fill="none" stroke="#212529" stroke-width="2" stroke-dasharray="10 8" opacity="0.9"/>
+    </g>
+
+    <g transform="translate(420,90) rotate(12)">
+      <rect x="-120" y="-40" width="220" height="110" rx="16" fill="rgba(255,255,255,0.85)" stroke="#212529" stroke-width="2"/>
+      <text x="-10" y="0" text-anchor="middle" dominant-baseline="middle" fill="#212529" font-family="sans-serif" font-size="22">Complex SVG</text>
+      <text x="-10" y="32" text-anchor="middle" dominant-baseline="middle" fill="#495057" font-family="sans-serif" font-size="14">gradients • clip • use • dash</text>
+    </g>
+
+    <g transform="translate(120,110)">
+      <circle cx="0" cy="0" r="42" fill="rgba(255,255,255,0.75)"/>
+      <circle cx="0" cy="0" r="42" fill="none" stroke="#212529" stroke-width="3"/>
+      <path d="M -16 4 L -4 16 L 18 -14" fill="none" stroke="#12b886" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <text x="12" y="348" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="12">mdpdf-core svg vector test</text>
+</svg>
