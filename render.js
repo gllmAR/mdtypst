@@ -91,9 +91,24 @@ function markdownToTypst(markdown, metadata) {
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
         
-        // Handle code blocks
+        // Handle code blocks and mermaid
         if (line.startsWith('```')) {
-            if (!inCodeBlock) {
+            if (inMermaid) {
+                // End mermaid block
+                inMermaid = false;
+                // In production, oxdraw would render the mermaid diagram
+                typst += `#block(fill: luma(250), inset: 8pt, radius: 4pt)[\n`;
+                typst += `  #text(size: 9pt, fill: gray)[Mermaid Diagram]\n`;
+                typst += `  #text(size: 8pt, font: "Courier New")[\n`;
+                const lines = mermaidContent.trim().split('\n');
+                lines.forEach((l, idx) => {
+                    typst += `    ${l}`;
+                    if (idx < lines.length - 1) typst += '\n';
+                });
+                typst += `\n  ]\n`;
+                typst += `]\n\n`;
+                mermaidContent = '';
+            } else if (!inCodeBlock) {
                 const language = line.substring(3).trim();
                 if (language === 'mermaid') {
                     inMermaid = true;
@@ -110,19 +125,7 @@ function markdownToTypst(markdown, metadata) {
         }
         
         if (inMermaid) {
-            if (line.startsWith('```')) {
-                inMermaid = false;
-                // In production, oxdraw would render the mermaid diagram
-                typst += `#block(fill: luma(250), inset: 8pt, radius: 4pt)[\n`;
-                typst += `  #text(size: 9pt, fill: gray)[Mermaid Diagram]\n`;
-                typst += `  #text(size: 8pt, font: "Courier New")[\n`;
-                typst += `    ${mermaidContent.split('\n').join('\\n    ')}\n`;
-                typst += `  ]\n`;
-                typst += `]\n\n`;
-                mermaidContent = '';
-            } else {
-                mermaidContent += line + '\n';
-            }
+            mermaidContent += line + '\n';
             continue;
         }
         
@@ -143,9 +146,11 @@ function markdownToTypst(markdown, metadata) {
         }
         // Bold and italic
         else if (line.includes('**') || line.includes('*') || line.includes('_')) {
+            // Bold: ** in markdown becomes * in Typst
             line = line.replace(/\*\*(.+?)\*\*/g, '*$1*');
-            line = line.replace(/\*(.+?)\*/g, '_$1_');
-            line = line.replace(/_(.+?)_/g, '_$1_');
+            // Italic: single * in markdown becomes _ in Typst (after bold is processed)
+            // This simple approach handles most cases
+            line = line.replace(/([^*]|^)\*([^*]+?)\*([^*]|$)/g, '$1_$2_$3');
             typst += line + '\n\n';
         }
         // Lists
