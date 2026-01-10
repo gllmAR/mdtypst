@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "title": "sidecar explicit"
+  },
+  "typst": {
+    "preamble": "#let sidecar_explicit_marker = 1"
+  }
+}

@@ -1,0 +1,3 @@
+title: sidecar yaml
+template: ./sidecar-yaml.typ
+preamble: '#let sidecar_yaml_marker = "ok"'

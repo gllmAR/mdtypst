@@ -1,0 +1,9 @@
+{
+  "mustContainTypst": [
+    "#let sidecar_missing_template_marker = 1",
+    "sidecar missing template"
+  ],
+  "mustNotContainTypst": [
+    "#include \"/mdtypst/template.typ\""
+  ]
+}

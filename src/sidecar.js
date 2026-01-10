@@ -96,14 +96,24 @@ function buildAutoSidecarUrls(srcUrlString) {
 export async function loadSidecar({ srcUrl, explicitSidecarUrl } = {}) {
   const candidates = [];
 
+  let absSrcUrl = null;
+  if (srcUrl) {
+    try {
+      absSrcUrl = new URL(srcUrl, window.location.href).toString();
+    } catch {
+      absSrcUrl = null;
+    }
+  }
+
   if (explicitSidecarUrl) {
     try {
-      candidates.push(new URL(explicitSidecarUrl, srcUrl || window.location.href).toString());
+      // Resolve relative sidecar URLs relative to the markdown document URL.
+      candidates.push(new URL(explicitSidecarUrl, absSrcUrl || window.location.href).toString());
     } catch {
       // ignore
     }
-  } else if (srcUrl) {
-    candidates.push(...buildAutoSidecarUrls(srcUrl));
+  } else if (absSrcUrl) {
+    candidates.push(...buildAutoSidecarUrls(absSrcUrl));
   }
 
   for (const url of candidates) {
@@ -140,10 +150,17 @@ export async function loadTypstTemplateText(sidecar, { documentUrl } = {}) {
   const template = sidecar?.typst?.template;
   if (!template || typeof template !== 'string') return null;
 
+  let base;
+  try {
+    base = documentUrl ? new URL(documentUrl, window.location.href).toString() : window.location.href;
+  } catch {
+    base = window.location.href;
+  }
+
   let abs;
   try {
     // Resolve relative templates relative to the markdown document.
-    abs = new URL(template, documentUrl || window.location.href).toString();
+    abs = new URL(template, base).toString();
   } catch {
     return null;
   }

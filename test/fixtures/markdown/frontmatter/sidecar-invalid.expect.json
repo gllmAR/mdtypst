@@ -1,0 +1,8 @@
+{
+  "mustContainTypst": [
+    "sidecar invalid"
+  ],
+  "mustNotContainTypst": [
+    "#let sidecar_invalid_marker = 1"
+  ]
+}

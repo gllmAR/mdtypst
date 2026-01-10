@@ -152,11 +152,43 @@ async function getTypstSource(page) {
   }
 }
 
+async function readJsonIfExists(absPath) {
+  try {
+    const raw = await fs.readFile(absPath, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function toStringParamValue(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
+}
+
+function hasOwn(o, k) {
+  return Object.prototype.hasOwnProperty.call(o, k);
+}
+
 async function runOne(page, baseUrl, srcPath, { timeoutMs, writePdf, outDir, renderer }) {
+  const paramsPath = path.resolve(repoRoot, srcPath.replace(/\.md$/i, '.params.json'));
+  const expectPath = path.resolve(repoRoot, srcPath.replace(/\.md$/i, '.expect.json'));
+  const extraParams = await readJsonIfExists(paramsPath);
+  const expectations = await readJsonIfExists(expectPath);
+
   const params = new URLSearchParams({
     src: srcPath,
     renderer: renderer || 'fallback',
   });
+
+  if (extraParams && typeof extraParams === 'object') {
+    for (const [k, v] of Object.entries(extraParams)) {
+      const s = toStringParamValue(v);
+      if (s != null) params.set(k, s);
+    }
+  }
   const url = `${baseUrl}/render.html?${params.toString()}`;
 
   // Playwright's waitForFunction signature differs across versions (arg vs options position).
@@ -227,6 +259,38 @@ async function runOne(page, baseUrl, srcPath, { timeoutMs, writePdf, outDir, ren
         throw new Error(`${err}\n\n--- Typst source ---\n${typstSource}`);
       }
       throw new Error(err);
+    }
+
+    if (expectations && typeof expectations === 'object') {
+      const typstSource = await getTypstSource(page);
+      if (typstSource == null) {
+        throw new Error('Expected Typst source but none was produced');
+      }
+
+      const mustContain = hasOwn(expectations, 'mustContainTypst') ? expectations.mustContainTypst : null;
+      const mustNotContain = hasOwn(expectations, 'mustNotContainTypst') ? expectations.mustNotContainTypst : null;
+
+      if (Array.isArray(mustContain)) {
+        for (const needle of mustContain) {
+          if (needle == null) continue;
+          if (!String(typstSource).includes(String(needle))) {
+            throw new Error(
+              `Typst source missing expected substring: ${needle}\n\n--- Typst source ---\n${typstSource}`,
+            );
+          }
+        }
+      }
+
+      if (Array.isArray(mustNotContain)) {
+        for (const needle of mustNotContain) {
+          if (needle == null) continue;
+          if (String(typstSource).includes(String(needle))) {
+            throw new Error(
+              `Typst source unexpectedly contained substring: ${needle}\n\n--- Typst source ---\n${typstSource}`,
+            );
+          }
+        }
+      }
     }
 
     const pdf = await getPdfBytes(page);

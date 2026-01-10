@@ -1,0 +1,7 @@
+{
+  "mustContainTypst": [
+    "#include \"/mdtypst/template.typ\"",
+    "#set par(justify: true)",
+    "Sidecar basic"
+  ]
+}
