@@ -6,6 +6,12 @@
 // State management
 let pdfBlob = null;
 let lastTypstSource = null;
+let cmarkerAvailable = true;
+
+const timings = {
+    marks: {},
+    counters: {},
+};
 
 // UI elements
 const statusEl = document.getElementById('status');
@@ -22,6 +28,18 @@ const rendererMode = urlParams.get('renderer') || 'auto';
 function updateStatus(message, type = 'info') {
     statusEl.textContent = message;
     statusEl.className = type;
+}
+
+function markTiming(name) {
+    try {
+        timings.marks[name] = performance.now();
+    } catch {
+        // ignore
+    }
+}
+
+function incCounter(name, by = 1) {
+    timings.counters[name] = (timings.counters[name] || 0) + by;
 }
 
 /**
@@ -272,6 +290,8 @@ function resolveLocalAsset(src, documentUrl) {
 async function mountAndRewriteImages(markdown, documentUrl, $typst) {
     if (!$typst || typeof $typst.mapShadow !== 'function') return markdown;
 
+    markTiming('images:scan:start');
+
     // Markdown images: ![alt](src "title")
     const mdImageRegex = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+("[^"]*"|'[^']*'))?\)/g;
     // Basic HTML images: <img ... src="..." ...>
@@ -310,32 +330,60 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
     const mounted = new Map(); // rawSrc -> shadowPath
     const failed = new Set();
 
-    for (const rawSrc of srcs) {
+    timings.counters.imagesTotal = srcs.length;
+
+    const timeoutMs = 2500;
+    const concurrency = 6;
+
+    const runPool = async (tasks, limit) => {
+        let idx = 0;
+        const workers = Array.from({ length: Math.max(1, Math.min(limit, tasks.length)) }, async () => {
+            while (idx < tasks.length) {
+                const current = idx++;
+                await tasks[current]();
+            }
+        });
+        await Promise.all(workers);
+    };
+
+    const tasks = srcs.map((rawSrc) => async () => {
         const resolved = resolveLocalAsset(rawSrc, documentUrl);
         if (!resolved) {
             failed.add(rawSrc);
-            continue;
+            incCounter('imagesFailed');
+            return;
         }
 
         if (resolved.fetchUrl == null) {
-            // Already virtual or otherwise doesn't need fetching.
             mounted.set(rawSrc, resolved.shadowPath);
-            continue;
+            incCounter('imagesMounted');
+            return;
         }
 
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), timeoutMs);
         try {
-            const resp = await fetch(resolved.fetchUrl);
+            const resp = await fetch(resolved.fetchUrl, { signal: controller.signal });
             if (!resp.ok) {
                 failed.add(rawSrc);
-                continue;
+                incCounter('imagesFailed');
+                return;
             }
+
             const buf = await resp.arrayBuffer();
             await $typst.mapShadow(resolved.shadowPath, new Uint8Array(buf));
             mounted.set(rawSrc, resolved.shadowPath);
+            incCounter('imagesMounted');
         } catch {
             failed.add(rawSrc);
+            incCounter('imagesFailed');
+        } finally {
+            clearTimeout(t);
         }
-    }
+    });
+
+    await runPool(tasks, concurrency);
+    markTiming('images:mounted');
 
     // Rewrite markdown so Typst only sees safe /assets/... paths.
     const rewrittenMd = markdown.replace(mdImageRegex, (_full, alt, src, title) => {
@@ -712,6 +760,7 @@ async function ensureTypstPackageRegistry($typst) {
         }
     } catch (e) {
         console.warn('Typst package registry setup failed; will use fallback renderer if needed.', e);
+        cmarkerAvailable = false;
     }
 }
 
@@ -766,6 +815,7 @@ async function waitForTypst() {
  */
 async function fetchMarkdown(url) {
     try {
+        markTiming('fetch:start');
         updateStatus(`Fetching markdown from: ${url}`);
         
         const response = await fetch(url);
@@ -774,6 +824,7 @@ async function fetchMarkdown(url) {
         }
         
         const content = await response.text();
+        markTiming('fetch:done');
         return content;
     } catch (error) {
         console.error('Failed to fetch markdown:', error);
@@ -786,17 +837,21 @@ async function fetchMarkdown(url) {
  */
 async function compileToPDF(markdownContent, documentUrl = null) {
     try {
+        markTiming('compile:start');
         updateStatus('Parsing frontmatter...');
         const { metadata, content } = parseFrontmatter(markdownContent);
 
         const sanitizedContent = closeUnclosedBacktickFence(content);
 
         updateStatus('Preparing Mermaid diagrams...');
+        markTiming('mermaid:start');
         const { transformedMarkdown, svgAssets } =
             await renderMermaidBlocksToSvgAssets(sanitizedContent);
+        markTiming('mermaid:done');
 
         updateStatus('Compiling to PDF with Typst WASM...');
         const $typst = await waitForTypst();
+        markTiming('typst:ready');
 
         // Configure package registry before the compiler initializes.
         await ensureTypstPackageRegistry($typst);
@@ -817,27 +872,54 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         // Fetch + mount external/local images into shadow FS and rewrite Markdown to those paths.
         const markdownForTypst = await mountAndRewriteImages(transformedMarkdown, documentUrl, $typst);
 
+        // Heuristic: remote markdown often can't use @preview package imports on GH Pages.
+        // Default to the fallback renderer for remote sources to avoid a slow failed attempt.
+        let useFallback = rendererMode === 'fallback';
+        if (!useFallback && rendererMode === 'auto') {
+            try {
+                const docOrigin = documentUrl ? new URL(documentUrl, window.location.href).origin : null;
+                if (docOrigin && docOrigin !== window.location.origin) {
+                    useFallback = true;
+                }
+            } catch {
+                // ignore
+            }
+        }
+        if (!useFallback && !cmarkerAvailable) useFallback = true;
+
         updateStatus('Converting Markdown to Typst...');
+        markTiming('typst:convert:start');
         let typstContent =
-            rendererMode === 'fallback'
+            useFallback
                 ? markdownToTypstFallback(markdownForTypst, metadata, documentUrl)
                 : markdownToTypstWithCmarker(markdownForTypst, metadata);
+        markTiming('typst:convert:done');
 
         lastTypstSource = typstContent;
 
         try {
             const pdfData = await $typst.pdf({ mainContent: typstContent });
+            markTiming('pdf:compiled');
             return pdfData;
         } catch (err) {
-            if (rendererMode === 'fallback') {
+            if (useFallback) {
                 throw err;
             }
 
             console.warn('Typst compilation failed; retrying with fallback renderer.', err);
+            try {
+                const msg = String(err?.message ?? err).toLowerCase();
+                if (msg.includes('unresolved import')) {
+                    cmarkerAvailable = false;
+                }
+            } catch {
+                // ignore
+            }
             updateStatus('Retrying with fallback renderer...');
             typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl);
             lastTypstSource = typstContent;
             const pdfData = await $typst.pdf({ mainContent: typstContent });
+            markTiming('pdf:compiled');
             return pdfData;
         }
     } catch (error) {
@@ -857,6 +939,7 @@ function displayPDF(pdfData) {
         pdfViewer.src = pdfUrl;
         pdfContainer.style.display = 'block';
         
+        markTiming('pdf:displayed');
         updateStatus('PDF rendered successfully!', 'success');
     } catch (error) {
         console.error('Failed to display PDF:', error);
@@ -925,6 +1008,7 @@ globalThis.__mdtypst = {
     getStatusText: () => statusEl?.textContent ?? '',
     getPdfBlob: () => pdfBlob,
     getTypstSource: () => lastTypstSource,
+    getTimings: () => timings,
     compileToPDF,
     displayPDF,
 };
