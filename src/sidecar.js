@@ -30,6 +30,10 @@ function isJsonPath(pathname) {
   return /\.json$/i.test(pathname);
 }
 
+function isTypstPath(pathname) {
+  return /\.typ$/i.test(pathname);
+}
+
 function normalizeSidecarObject(obj) {
   if (!obj || typeof obj !== 'object') return { metadata: {}, typst: {} };
 
@@ -74,7 +78,7 @@ async function tryFetchText(url, { timeoutMs = 8000 } = {}) {
 
 function buildAutoSidecarUrls(srcUrlString) {
   // Strategy: look for a sibling file next to the markdown.
-  // - foo.md -> foo.mdtypst.json then foo.mdtypst.yaml
+  // - foo.md -> foo.mdtypst.json then foo.mdtypst.yaml then foo.mdtypst.typ
   // - foo     -> foo.mdtypst.json then foo.mdtypst.yaml
   const urls = [];
   let abs;
@@ -88,8 +92,9 @@ function buildAutoSidecarUrls(srcUrlString) {
   const isMd = /\.md$/i.test(abs.pathname);
   const jsonUrl = isMd ? base.replace(/\.md$/i, '.mdtypst.json') : `${base}.mdtypst.json`;
   const yamlUrl = isMd ? base.replace(/\.md$/i, '.mdtypst.yaml') : `${base}.mdtypst.yaml`;
+  const typUrl = isMd ? base.replace(/\.md$/i, '.mdtypst.typ') : `${base}.mdtypst.typ`;
 
-  urls.push(jsonUrl, yamlUrl);
+  urls.push(jsonUrl, yamlUrl, typUrl);
   return urls;
 }
 
@@ -127,6 +132,16 @@ export async function loadSidecar({ srcUrl, explicitSidecarUrl } = {}) {
         raw = JSON.parse(text);
       } else if (isYamlPath(u.pathname)) {
         raw = parseFlatYaml(text);
+      } else if (isTypstPath(u.pathname)) {
+        // Native Typst sidecar: treat the file as a template payload.
+        // (We mount it and include it, so users can write pure Typst styling.)
+        return {
+          url,
+          metadata: {},
+          typst: {
+            templateText: text,
+          },
+        };
       } else {
         // Unknown extension: attempt JSON first, then YAML.
         try {
@@ -147,6 +162,11 @@ export async function loadSidecar({ srcUrl, explicitSidecarUrl } = {}) {
 }
 
 export async function loadTypstTemplateText(sidecar, { documentUrl } = {}) {
+  const inlineTemplate = sidecar?.typst?.templateText;
+  if (typeof inlineTemplate === 'string' && inlineTemplate.trim()) {
+    return { url: sidecar?.url || '(inline)', text: inlineTemplate };
+  }
+
   const template = sidecar?.typst?.template;
   if (!template || typeof template !== 'string') return null;
 

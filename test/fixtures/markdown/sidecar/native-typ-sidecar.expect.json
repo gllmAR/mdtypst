@@ -1,0 +1,6 @@
+{
+  "mustContainTypst": [
+    "#include \"/mdtypst/template.typ\"",
+    "Native .typ sidecar"
+  ]
+}
