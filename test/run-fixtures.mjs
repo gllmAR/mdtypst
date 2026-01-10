@@ -40,6 +40,43 @@ function parseArgs(argv) {
 async function listMarkdownFiles(globPattern) {
   // Minimal globbing: supports patterns like test/fixtures/markdown/**/*.md
   // We intentionally keep this dependency-free.
+  if (!globPattern.includes('/**/')) {
+    const rel = globPattern.replaceAll('\\', '/');
+    if (!rel.startsWith(`${fixturesMarkdownRoot}/`)) {
+      throw new Error(
+        `Unsupported --pattern. Must be under ${fixturesMarkdownRoot}/ (got: ${globPattern})`,
+      );
+    }
+
+    const abs = path.resolve(repoRoot, rel);
+    const st = await fs.stat(abs).catch(() => null);
+    if (!st) throw new Error(`--pattern not found: ${globPattern}`);
+
+    if (st.isFile()) {
+      if (!rel.endsWith('.md')) throw new Error(`--pattern must be a .md file: ${globPattern}`);
+      return [rel];
+    }
+
+    if (st.isDirectory()) {
+      const out = [];
+      async function walk(dir) {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const e of entries) {
+          const full = path.join(dir, e.name);
+          if (e.isDirectory()) await walk(full);
+          else if (e.isFile() && e.name.endsWith('.md')) {
+            out.push(path.relative(repoRoot, full).replaceAll(path.sep, '/'));
+          }
+        }
+      }
+      await walk(abs);
+      out.sort();
+      return out;
+    }
+
+    throw new Error(`Unsupported --pattern type: ${globPattern}`);
+  }
+
   const parts = globPattern.split('/**/');
   if (parts.length !== 2) {
     throw new Error(
@@ -122,31 +159,69 @@ async function runOne(page, baseUrl, srcPath, { timeoutMs, writePdf, outDir, ren
   });
   const url = `${baseUrl}/render.html?${params.toString()}`;
 
+  // Playwright's waitForFunction signature differs across versions (arg vs options position).
+  // Set defaults to make timeouts consistent and avoid API differences.
+  page.setDefaultTimeout(timeoutMs);
+  page.setDefaultNavigationTimeout(timeoutMs);
+
   const consoleErrors = [];
+  const pageErrors = [];
+  const requestFailures = [];
   const onConsole = (msg) => {
     const type = msg.type();
     if (type === 'error') consoleErrors.push(msg.text());
   };
   page.on('console', onConsole);
+  const onPageError = (err) => {
+    pageErrors.push(String(err?.message ?? err));
+  };
+  page.on('pageerror', onPageError);
+  const onRequestFailed = (req) => {
+    try {
+      requestFailures.push(`${req.failure()?.errorText || 'request failed'}: ${req.url()}`);
+    } catch {
+      requestFailures.push('request failed');
+    }
+  };
+  page.on('requestfailed', onRequestFailed);
 
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
 
     // Wait for either success or error.
-    await page.waitForFunction(
-      () => {
+    try {
+      await page.waitForFunction(
+        () => {
+          const el = document.getElementById('status');
+          if (!el) return false;
+          return el.classList.contains('success') || el.classList.contains('error');
+        },
+      );
+    } catch (e) {
+      const status = await page.evaluate(() => {
         const el = document.getElementById('status');
-        if (!el) return false;
-        return el.classList.contains('success') || el.classList.contains('error');
-      },
-      { timeout: timeoutMs },
-    );
+        return {
+          text: el?.textContent ?? '',
+          className: el?.className ?? '',
+        };
+      }).catch(() => ({ text: '', className: '' }));
+
+      const details = [
+        status?.text ? `Status: ${status.text}` : null,
+        status?.className ? `Status class: ${status.className}` : null,
+        pageErrors[0] ? `Page error: ${pageErrors[0]}` : null,
+        consoleErrors[0] ? `Console error: ${consoleErrors[0]}` : null,
+        requestFailures[0] ? `Request failed: ${requestFailures[0]}` : null,
+      ].filter(Boolean).join('\n');
+
+      throw new Error(details || String(e?.message ?? e));
+    }
 
     const status = await page.evaluate(() => document.getElementById('status')?.textContent ?? '');
     const isSuccess = await page.evaluate(() => document.getElementById('status')?.classList.contains('success') ?? false);
 
     if (!isSuccess) {
-      const err = consoleErrors[0] || status || 'Unknown error';
+      const err = pageErrors[0] || consoleErrors[0] || status || 'Unknown error';
       const typstSource = await getTypstSource(page);
       if (typstSource) {
         throw new Error(`${err}\n\n--- Typst source ---\n${typstSource}`);
@@ -180,6 +255,8 @@ async function runOne(page, baseUrl, srcPath, { timeoutMs, writePdf, outDir, ren
     return { ok: true, status };
   } finally {
     page.off('console', onConsole);
+    page.off('pageerror', onPageError);
+    page.off('requestfailed', onRequestFailed);
   }
 }
 

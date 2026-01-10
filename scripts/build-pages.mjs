@@ -48,6 +48,11 @@ async function main() {
   }
   await copyDir(vendorSrc, path.join(distDir, 'vendor'));
 
+  const srcDir = path.join(repoRoot, 'src');
+  if (await pathExists(srcDir)) {
+    await copyDir(srcDir, path.join(distDir, 'src'));
+  }
+
   console.log(`Built ${path.relative(repoRoot, distDir)}/ for GitHub Pages.`);
 }
 
