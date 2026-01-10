@@ -34,6 +34,40 @@ Open:
 - `debug` (optional): `0` disables debug logging (default is enabled).
 - `noFallback` (optional): `1` disables retrying with the fallback renderer if Typst compilation fails.
 
+### Sidecar document description (styling)
+
+To customize styling without putting YAML into the Markdown file, mdtypst can load a sidecar “document description” file next to the Markdown.
+
+Auto-discovery (when `src=...` is provided):
+
+- For `foo.md`, mdtypst tries:
+	- `foo.mdtypst.json`
+	- `foo.mdtypst.yaml`
+
+You can also provide an explicit URL:
+
+- `sidecar=<url>`
+
+Supported sidecar keys (JSON or flat YAML):
+
+- Metadata keys (same as frontmatter): `title`, `author`, `date`, `paper`, `margin`, `margin_x`, `margin_y`, `font`, `fontSize`/`font_size`, `justify`, `toc`
+- Typst styling:
+	- `typst.template`: URL to a `.typ` file that will be mounted and `#include`’d before content.
+	- `typst.preamble`: raw Typst code string inserted before content (use carefully).
+
+Example `foo.mdtypst.json`:
+
+```json
+{
+	"paper": "a4",
+	"margin": "2cm",
+	"typst": {
+		"template": "./house-style.typ",
+		"preamble": "#set par(justify: true)"
+	}
+}
+```
+
 ## Architecture
 
 - `render.html` loads the Typst runtime (vendored first, CDN fallback) and then loads `render.js`.

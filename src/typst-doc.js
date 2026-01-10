@@ -5,7 +5,11 @@ import { resolveLocalAsset } from './assets.js';
 // cmarker-based renderer
 // ------------------------
 
-export function markdownToTypstWithCmarker(markdown, metadata, { tableMode = 'cmarker' } = {}) {
+export function markdownToTypstWithCmarker(
+  markdown,
+  metadata,
+  { tableMode = 'cmarker', extraPreamble = '' } = {},
+) {
   let typst = '';
 
   typst += `#import "@preview/cmarker:0.1.8": cmarker\n`;
@@ -37,6 +41,10 @@ export function markdownToTypstWithCmarker(markdown, metadata, { tableMode = 'cm
   }
 
   typst += typstPreludeFromMetadata(metadata);
+
+  if (extraPreamble && String(extraPreamble).trim()) {
+    typst += `${String(extraPreamble).trim()}\n\n`;
+  }
 
   if (metadata.title) {
     typst += `#align(center)[\n  #text(size: 24pt, weight: "bold")[${escapeTypstString(metadata.title)}]\n]\n`;
@@ -215,7 +223,12 @@ function markdownInlineToTypst(text) {
   return out;
 }
 
-export function markdownToTypstFallback(markdown, metadata, documentUrl = null) {
+export function markdownToTypstFallback(
+  markdown,
+  metadata,
+  documentUrl = null,
+  { extraPreamble = '' } = {},
+) {
   // Very small Markdown subset -> Typst markup.
   // This is used when Typst package fetching is unavailable and cmarker can't be imported.
   const lines = String(markdown).replace(/\r\n/g, '\n').split('\n');
@@ -447,6 +460,9 @@ export function markdownToTypstFallback(markdown, metadata, documentUrl = null) 
   }
 
   typst += typstPreludeFromMetadata(metadata);
+  if (extraPreamble && String(extraPreamble).trim()) {
+    typst += `${String(extraPreamble).trim()}\n\n`;
+  }
 
   if (metadata.title) {
     typst += `= ${markdownInlineToTypst(metadata.title)}\n\n`;

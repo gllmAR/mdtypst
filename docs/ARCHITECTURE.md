@@ -49,6 +49,21 @@ Offline support is handled by vendoring these runtimes into `vendor/`.
 - `debug`: `0` disables debug logging
 - `noFallback`: `1` disables retrying compilation with the fallback renderer
 
+## Sidecar document description
+
+To maximize interoperability with existing Typst styling workflows while keeping Markdown files clean, mdtypst supports an optional sidecar file next to the Markdown:
+
+- `foo.md` → tries `foo.mdtypst.json` then `foo.mdtypst.yaml`
+
+The sidecar can:
+
+- Provide metadata (same keys as frontmatter) to control built-in prelude generation.
+- Provide Typst-native styling via `typst.template` and/or `typst.preamble`.
+
+When `typst.template` is provided:
+
+- mdtypst fetches the template, mounts it into the Typst shadow FS at `/mdtypst/template.typ`, and injects `#include "/mdtypst/template.typ"` before content.
+
 ## Notes / constraints
 
 - Frontmatter parsing is intentionally minimal: only flat `key: value` scalars are supported.

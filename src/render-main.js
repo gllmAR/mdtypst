@@ -12,6 +12,7 @@ import { createLogger, createTimings } from './logging.js';
 import { renderMermaidBlocksToSvgAssets } from './mermaid.js';
 import { mountAndRewriteImages } from './assets.js';
 import { markdownToTypstFallback, markdownToTypstWithCmarker } from './typst-doc.js';
+import { loadSidecar, loadTypstTemplateText } from './sidecar.js';
 
 // Flag used by the root entrypoint (`render.js`) and the fixture harness to
 // confirm the modular implementation loaded.
@@ -31,7 +32,6 @@ const pdfViewer = document.getElementById('pdf-viewer');
 const downloadBtn = document.getElementById('download-btn');
 
 const urlParams = new URLSearchParams(window.location.search);
-const rendererMode = urlParams.get('renderer') || 'auto';
 // Debug logging is enabled by default; disable with ?debug=0.
 const debugEnabled = urlParams.get('debug') !== '0';
 
@@ -148,11 +148,22 @@ async function fetchMarkdown(url) {
 async function compileToPDF(markdownContent, documentUrl = null) {
     try {
         markTiming('compile:start');
-        debugLog('compileToPDF: start', { documentUrl, rendererMode });
+        debugLog('compileToPDF: start', { documentUrl });
         updateStatus('Parsing frontmatter...');
 
-        const { metadata, content } = parseFrontmatter(markdownContent);
+        const { metadata: fmMetadata, content } = parseFrontmatter(markdownContent);
         const sanitizedContent = closeUnclosedBacktickFence(content);
+
+        const explicitSidecarUrl = urlParams.get('sidecar');
+        const sidecar = await loadSidecar({ srcUrl: documentUrl, explicitSidecarUrl });
+        if (sidecar?.url) {
+            debugLog('sidecar: loaded', { url: sidecar.url });
+        }
+
+        const metadata = {
+            ...(fmMetadata || {}),
+            ...(sidecar?.metadata || {}),
+        };
 
         updateStatus('Preparing Mermaid diagrams...');
         markTiming('mermaid:start');
@@ -175,6 +186,14 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         // Ensure a clean slate across renders
         if (typeof $typst.resetShadow === 'function') {
             await $typst.resetShadow();
+        }
+
+        // Optional Typst styling template (sidecar-controlled).
+        // We mount it into shadow FS and include it in the generated Typst document.
+        const template = await loadTypstTemplateText(sidecar, { documentUrl });
+        if (template && typeof $typst.mapShadow === 'function') {
+            const encoder = new TextEncoder();
+            await $typst.mapShadow('/mdtypst/template.typ', encoder.encode(template.text));
         }
 
         // Mount mermaid SVG assets so Typst can `image("/assets/...")`
@@ -201,6 +220,19 @@ async function compileToPDF(markdownContent, documentUrl = null) {
 
         const tablesParam = urlParams.get('tables');
         const tableMode = tablesParam === '1' || tablesParam === 'tablem' ? 'tablem' : 'cmarker';
+
+        const extraPreambleParts = [];
+        if (template) {
+            extraPreambleParts.push('#include "/mdtypst/template.typ"');
+        }
+        const sidecarPreamble = sidecar?.typst?.preamble;
+        if (sidecarPreamble && String(sidecarPreamble).trim()) {
+            extraPreambleParts.push(String(sidecarPreamble).trim());
+        }
+        const extraPreamble = extraPreambleParts.length ? `${extraPreambleParts.join('\n')}\n` : '';
+
+        const rendererParam = urlParams.get('renderer');
+        const rendererMode = rendererParam || 'auto';
 
         // Heuristic: remote markdown often can't use @preview package imports on GH Pages.
         // Default to the fallback renderer for remote sources to avoid a slow failed attempt.
@@ -239,9 +271,9 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         markTiming('typst:convert:start');
         let typstContent;
         if (useFallback) {
-            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl);
+            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl, { extraPreamble });
         } else {
-            typstContent = markdownToTypstWithCmarker(markdownForTypst, metadata, { tableMode });
+            typstContent = markdownToTypstWithCmarker(markdownForTypst, metadata, { tableMode, extraPreamble });
         }
         markTiming('typst:convert:done');
 
@@ -277,7 +309,7 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             }
 
             updateStatus('Retrying with fallback renderer...');
-            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl);
+            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl, { extraPreamble });
             lastTypstSource = typstContent;
             markTiming('pdf:compile:start');
             const pdfData = await $typst.pdf({ mainContent: typstContent });
