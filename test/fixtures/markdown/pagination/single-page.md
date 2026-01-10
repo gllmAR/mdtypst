@@ -1,0 +1,3 @@
+# Single Page
+
+Short content.
