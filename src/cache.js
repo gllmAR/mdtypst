@@ -1,7 +1,12 @@
+let runtimeCachePromise = null;
+
 async function getRuntimeCache() {
   try {
     if (!('caches' in globalThis)) return null;
-    return await caches.open('mdtypst-v1');
+    if (!runtimeCachePromise) {
+      runtimeCachePromise = caches.open('mdtypst-v1').catch(() => null);
+    }
+    return await runtimeCachePromise;
   } catch {
     return null;
   }

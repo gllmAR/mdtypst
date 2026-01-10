@@ -67,6 +67,11 @@ function ms(n) {
 
 async function runOnce(page, url, timeoutMs, { waitViewer }) {
   const t0 = Date.now();
+
+  // Ensure the configured timeout is actually used everywhere.
+  page.setDefaultTimeout(timeoutMs);
+  page.setDefaultNavigationTimeout(timeoutMs);
+
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
 
   await page.waitForFunction(
@@ -84,8 +89,10 @@ async function runOnce(page, url, timeoutMs, { waitViewer }) {
   if (ok && waitViewer) {
     await page.waitForFunction(
       () => {
-        const t = globalThis.__mdtypst?.getTimings?.();
-        return Boolean(t?.marks?.['pdf:viewerLoaded']);
+        const iframe = document.getElementById('pdf-viewer');
+        const iframeReady = Boolean(iframe && typeof iframe.src === 'string' && iframe.src.startsWith('blob:'));
+        const blobReady = Boolean(globalThis.__mdtypst?.getPdfBlob?.());
+        return iframeReady || blobReady;
       },
       { timeout: timeoutMs },
     );

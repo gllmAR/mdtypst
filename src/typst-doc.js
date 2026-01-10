@@ -58,13 +58,14 @@ function typstMdtypstContextFromMetadata(metadata) {
 export function markdownToTypstWithCmarker(
   markdown,
   metadata,
-  { tableMode = 'cmarker', extraPreamble = '', includeMetadataPrelude = true } = {},
+  { tableMode = 'cmarker', extraPreamble = '', includeMetadataPrelude = true, markdownPath = null } = {},
 ) {
   let typst = '';
 
   typst += `#import "@preview/cmarker:0.1.8": cmarker\n`;
 
   const useTablem = tableMode === 'tablem';
+  const canUsePath = Boolean(markdownPath) && !useTablem;
   const { markdown: rewrittenMarkdown, usedTablem } = useTablem
     ? rewriteMarkdownPipeTablesToTablem(markdown)
     : { markdown, usedTablem: false };
@@ -117,8 +118,12 @@ export function markdownToTypstWithCmarker(
     }
   }
 
+  const markdownExpr = canUsePath
+    ? `read("${escapeTypstString(String(markdownPath))}")`
+    : `"${escapeTypstString(rewrittenMarkdown)}"`;
+
   typst += `#cmarker.render(\n`;
-  typst += `  "${escapeTypstString(rewrittenMarkdown)}",\n`;
+  typst += `  ${markdownExpr},\n`;
   typst += `  scope: (image: (source, alt: none, format: auto) => image(source, alt: alt, format: format))\n`;
   typst += `)\n`;
 

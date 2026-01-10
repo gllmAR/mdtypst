@@ -191,13 +191,14 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             await $typst.resetShadow();
         }
 
+        const encoder = new TextEncoder();
+
         // Optional Typst styling template (sidecar-controlled).
         // Sidecars are native Typst templates; we mount them into shadow FS and include them.
         const templateText = sidecar?.typst?.templateText;
         const hasTemplate = Boolean(templateText && String(templateText).trim());
         lastTemplateUrl = hasTemplate ? sidecar?.url || null : null;
         if (hasTemplate && typeof $typst.mapShadow === 'function') {
-            const encoder = new TextEncoder();
             await $typst.mapShadow('/mdtypst/template.typ', encoder.encode(String(templateText)));
         }
 
@@ -205,7 +206,6 @@ async function compileToPDF(markdownContent, documentUrl = null) {
 
         // Mount mermaid SVG assets so Typst can `image("/assets/...")`
         if (typeof $typst.mapShadow === 'function') {
-            const encoder = new TextEncoder();
             for (const asset of svgAssets) {
                 await $typst.mapShadow(asset.path, encoder.encode(asset.svg));
             }
@@ -279,10 +279,29 @@ async function compileToPDF(markdownContent, documentUrl = null) {
                 includeMetadataPrelude: !nativeTemplateMode,
             });
         } else {
+            // Performance: for the default cmarker mode, avoid embedding large Markdown content
+            // as a huge string literal inside the Typst source. Instead, mount the Markdown
+            // into the shadow FS and let Typst read it.
+            const canMountMarkdown =
+                tableMode !== 'tablem' &&
+                typeof $typst.mapShadow === 'function' &&
+                typeof encoder?.encode === 'function';
+
+            let markdownPath = null;
+            if (canMountMarkdown) {
+                try {
+                    markdownPath = '/mdtypst/input.md';
+                    await $typst.mapShadow(markdownPath, encoder.encode(String(markdownForTypst)));
+                } catch {
+                    markdownPath = null;
+                }
+            }
+
             typstContent = markdownToTypstWithCmarker(markdownForTypst, metadata, {
                 tableMode,
                 extraPreamble,
                 includeMetadataPrelude: !nativeTemplateMode,
+                markdownPath,
             });
         }
         markTiming('typst:convert:done');
@@ -404,10 +423,6 @@ async function main() {
             updateStatus('No source URL provided. Use ?src=URL to specify a markdown document.', 'error');
             return;
         }
-        
-        // Initialize Typst runtime
-        updateStatus('Loading Typst WASM runtime...');
-        await waitForTypst();
         
         // Fetch markdown
         const markdownContent = await fetchMarkdown(srcUrl);

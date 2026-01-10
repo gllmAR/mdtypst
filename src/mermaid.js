@@ -14,35 +14,7 @@ export async function renderMermaidBlocksToSvgAssets(markdown, { markTiming, deb
 
   updateStatus?.('Rendering Mermaid diagrams...');
 
-  const localMermaid = new URL('../vendor/mermaid/mermaid.esm.min.mjs', import.meta.url);
-  const cdnMermaid = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-
-  let mermaid;
-  try {
-    const probe = await fetch(localMermaid.href, { method: 'GET' }).catch(() => null);
-    if (probe && probe.ok) {
-      mermaid = (await import(localMermaid.href)).default;
-    } else {
-      mermaid = (await import(cdnMermaid)).default;
-    }
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('Failed to load Mermaid; falling back to CDN.', e);
-    mermaid = (await import(cdnMermaid)).default;
-  }
-
-  // Typst's SVG rendering does not support `<foreignObject>` reliably.
-  // Mermaid uses HTML labels (foreignObject) in some diagrams (notably flowcharts),
-  // which can lead to "missing text" when embedded into the Typst document.
-  //
-  // Force SVG-native labels and prefer the neutral theme by default.
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    theme: 'neutral',
-    flowchart: { htmlLabels: false },
-    sequence: { htmlLabels: false },
-  });
+  const mermaid = await getMermaid();
 
   const svgAssets = [];
   let transformed = '';
@@ -77,4 +49,43 @@ export async function renderMermaidBlocksToSvgAssets(markdown, { markTiming, deb
 
   markTiming?.('mermaid:done');
   return { transformedMarkdown: transformed, svgAssets };
+}
+
+let mermaidPromise = null;
+
+async function getMermaid() {
+  if (mermaidPromise) return mermaidPromise;
+
+  mermaidPromise = (async () => {
+    const localMermaid = new URL('../vendor/mermaid/mermaid.esm.min.mjs', import.meta.url);
+    const cdnMermaid = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+
+    let mod;
+    try {
+      const probe = await fetch(localMermaid.href, { method: 'GET' }).catch(() => null);
+      if (probe && probe.ok) {
+        mod = (await import(localMermaid.href)).default;
+      } else {
+        mod = (await import(cdnMermaid)).default;
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to load Mermaid; falling back to CDN.', e);
+      mod = (await import(cdnMermaid)).default;
+    }
+
+    // Typst's SVG rendering does not support `<foreignObject>` reliably.
+    // Force SVG-native labels and prefer the neutral theme by default.
+    mod.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'neutral',
+      flowchart: { htmlLabels: false },
+      sequence: { htmlLabels: false },
+    });
+
+    return mod;
+  })();
+
+  return mermaidPromise;
 }
