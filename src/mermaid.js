@@ -31,7 +31,18 @@ export async function renderMermaidBlocksToSvgAssets(markdown, { markTiming, deb
     mermaid = (await import(cdnMermaid)).default;
   }
 
-  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
+  // Typst's SVG rendering does not support `<foreignObject>` reliably.
+  // Mermaid uses HTML labels (foreignObject) in some diagrams (notably flowcharts),
+  // which can lead to "missing text" when embedded into the Typst document.
+  //
+  // Force SVG-native labels and prefer the neutral theme by default.
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme: 'neutral',
+    flowchart: { htmlLabels: false },
+    sequence: { htmlLabels: false },
+  });
 
   const svgAssets = [];
   let transformed = '';
