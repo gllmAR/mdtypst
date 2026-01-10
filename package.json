@@ -1,0 +1,24 @@
+{
+  "name": "mdpdf-link",
+  "version": "0.9.0",
+  "description": "Statically hosted, URL-driven Markdown→PDF renderer",
+  "main": "render.js",
+  "type": "module",
+  "scripts": {
+    "serve": "npx serve -p 8000",
+    "test": "echo \"Open render.html?src=sample.md in browser for testing\""
+  },
+  "keywords": [
+    "markdown",
+    "pdf",
+    "typst",
+    "wasm",
+    "static",
+    "renderer"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "serve": "^14.2.0"
+  }
+}

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>mdpdf-link v0.9 - Markdown to PDF Renderer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 40px 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-top: 0;
+            font-size: 2.5em;
+        }
+        .version {
+            color: #764ba2;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+        .tagline {
+            font-size: 1.2em;
+            color: #555;
+            margin: 20px 0 30px;
+        }
+        .feature-list {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .feature-list ul {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+        .feature-list li {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+        .demo-section {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+        .demo-section h2 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+        .url-box {
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            border: 2px solid #1976d2;
+            font-family: 'Courier New', monospace;
+            margin: 15px 0;
+            word-break: break-all;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: all 0.3s;
+            margin: 10px 10px 10px 0;
+        }
+        .btn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #764ba2;
+        }
+        .btn-secondary:hover {
+            background: #63408a;
+        }
+        .tech-stack {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .tech-item {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+        }
+        .tech-item strong {
+            display: block;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .architecture {
+            margin: 20px 0;
+            padding: 20px;
+            background: #fff8e1;
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
+        }
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>mdpdf-link <span class="version">v0.9</span></h1>
+        <p class="tagline">Statically hosted, URL-driven Markdown→PDF renderer</p>
+        
+        <div class="feature-list">
+            <h2>Features</h2>
+            <ul>
+                <li><strong>URL-Driven:</strong> Simply provide a link to any markdown file</li>
+                <li><strong>YAML Frontmatter:</strong> Parse document metadata (title, author, date)</li>
+                <li><strong>Typst WASM:</strong> Client-side PDF compilation with high-quality typesetting</li>
+                <li><strong>Markdown Rendering:</strong> Full support via cmarker-style conversion</li>
+                <li><strong>Mermaid Diagrams:</strong> Visual diagrams rendered through oxdraw</li>
+                <li><strong>Zero Server Compute:</strong> Everything runs deterministically in your browser</li>
+                <li><strong>Native Display:</strong> View PDF directly or download for offline use</li>
+            </ul>
+        </div>
+
+        <div class="demo-section">
+            <h2>Try It Now</h2>
+            <p>Click the button below to render the included sample document:</p>
+            <a href="render.html?src=sample.md" class="btn">Render Sample Document</a>
+            
+            <h3 style="margin-top: 30px;">Use Your Own Document</h3>
+            <p>Navigate to the following URL format:</p>
+            <div class="url-box">
+                render.html?src=<strong>YOUR_MARKDOWN_URL</strong>
+            </div>
+            <p><small>Replace <code>YOUR_MARKDOWN_URL</code> with the URL of any publicly accessible Markdown file.</small></p>
+        </div>
+
+        <div class="architecture">
+            <h2>How It Works</h2>
+            <ol>
+                <li><strong>Fetch:</strong> Retrieve Markdown document from specified URL</li>
+                <li><strong>Parse:</strong> Extract YAML frontmatter metadata</li>
+                <li><strong>Convert:</strong> Transform Markdown to Typst format (cmarker)</li>
+                <li><strong>Compile:</strong> Generate PDF using Typst WASM engine</li>
+                <li><strong>Render:</strong> Display PDF in browser or offer download</li>
+            </ol>
+            <p style="margin-top: 15px;"><em>All processing happens client-side with zero server involvement. Deterministic and reproducible.</em></p>
+        </div>
+
+        <h2>Technology Stack</h2>
+        <div class="tech-stack">
+            <div class="tech-item">
+                <strong>Typst WASM</strong>
+                <div>PDF compilation</div>
+            </div>
+            <div class="tech-item">
+                <strong>cmarker</strong>
+                <div>Markdown parsing</div>
+            </div>
+            <div class="tech-item">
+                <strong>oxdraw</strong>
+                <div>Mermaid diagrams</div>
+            </div>
+            <div class="tech-item">
+                <strong>JavaScript</strong>
+                <div>Minimal orchestration</div>
+            </div>
+        </div>
+
+        <h2>Deployment</h2>
+        <p>Deploy to any static hosting service (GitHub Pages, Netlify, Vercel, CloudFlare Pages):</p>
+        <ol>
+            <li>Upload <code>render.html</code> and <code>render.js</code></li>
+            <li>No build process required</li>
+            <li>No server configuration needed</li>
+            <li>Ready to use immediately</li>
+        </ol>
+
+        <div style="margin-top: 30px;">
+            <a href="render.html?src=sample.md" class="btn">Try Demo</a>
+            <a href="https://github.com/gllmAR/mdtypst" class="btn btn-secondary" target="_blank">View on GitHub</a>
+        </div>
+
+        <div class="footer">
+            <p>mdpdf-link v0.9 - Deterministic Markdown to PDF rendering</p>
+            <p>No server compute • No databases • No API calls</p>
+        </div>
+    </div>
+</body>
+</html>
