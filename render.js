@@ -296,6 +296,16 @@ function resolveLocalAsset(src, documentUrl) {
 
         // Absolute remote URLs: mount into shadow FS under a safe synthetic path.
         if (/^https?:/i.test(src)) {
+            // GitHub badge/image endpoints are commonly CORS-blocked in browsers.
+            // Skip fetching them to avoid slowdowns; they will be replaced with text.
+            try {
+                const u = new URL(src);
+                if (u.origin === 'https://github.com' || u.origin === 'https://www.github.com') {
+                    return null;
+                }
+            } catch {
+                // ignore
+            }
             const shadowPath = `/assets/remote/${fnv1a32Hex(src)}${assetExtFromUrl(src)}`;
             return { fetchUrl: src, shadowPath };
         }
@@ -319,6 +329,16 @@ function resolveLocalAsset(src, documentUrl) {
         }
 
         const fetchUrl = abs.toString();
+
+        // Same as above: github.com assets are usually blocked by CORS.
+        try {
+            if (abs.origin === 'https://github.com' || abs.origin === 'https://www.github.com') {
+                return null;
+            }
+        } catch {
+            // ignore
+        }
+
         const shadowPath = `/assets/remote/${fnv1a32Hex(fetchUrl)}${assetExtFromUrl(fetchUrl)}`;
         return { fetchUrl, shadowPath };
     } catch {
