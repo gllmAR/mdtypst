@@ -399,10 +399,9 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
             return;
         }
 
-        const controller = new AbortController();
-        const t = setTimeout(() => controller.abort(), timeoutMs);
+        const t = setTimeout(() => {}, timeoutMs);
         try {
-            const resp = await fetch(resolved.fetchUrl, { signal: controller.signal });
+            const resp = await fetchWithCache(resolved.fetchUrl, { timeoutMs });
             if (!resp.ok) {
                 failed.add(rawSrc);
                 incCounter('imagesFailed');
@@ -856,8 +855,8 @@ async function fetchMarkdown(url) {
     try {
         markTiming('fetch:start');
         updateStatus(`Fetching markdown from: ${url}`);
-        
-        const response = await fetch(url);
+
+        const response = await fetchWithCache(url);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
