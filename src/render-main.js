@@ -211,13 +211,21 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             }
         }
 
+        const jpegParam = urlParams.get('jpeg');
+        const userJpegMode = jpegParam === 'transcode' ? 'transcode' : 'native';
+
+        const buildMarkdownForTypst = async ({ jpegMode }) => {
+            return await mountAndRewriteImages(transformedMarkdown, documentUrl, $typst, {
+                markTiming,
+                debugLog,
+                incCounter,
+                timings,
+                jpegMode,
+            });
+        };
+
         // Fetch + mount external/local images into shadow FS and rewrite Markdown to those paths.
-        const markdownForTypst = await mountAndRewriteImages(transformedMarkdown, documentUrl, $typst, {
-            markTiming,
-            debugLog,
-            incCounter,
-            timings,
-        });
+        let markdownForTypst = await buildMarkdownForTypst({ jpegMode: userJpegMode });
 
         debugLog('images: mounted', {
             total: timings.counters.imagesTotal ?? 0,
@@ -323,6 +331,59 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             });
             return pdfData;
         } catch (err) {
+            // If JPEG handling is the problem, retry once with JPEG transcoding.
+            // This keeps the default fast path (native JPEG) while preserving compatibility.
+            const hadJpeg = Boolean((timings?.counters?.imagesJpegCount ?? 0) > 0);
+            const alreadyTranscoding = userJpegMode === 'transcode' || (timings?.counters?.imagesJpegTranscoded ?? 0) > 0;
+            if (hadJpeg && !alreadyTranscoding) {
+                updateStatus('Retrying with JPEG transcoding...');
+                try {
+                    markdownForTypst = await buildMarkdownForTypst({ jpegMode: 'transcode' });
+
+                    markTiming('typst:convert:start');
+                    if (useFallback) {
+                        typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl, {
+                            extraPreamble,
+                            includeMetadataPrelude: !nativeTemplateMode,
+                        });
+                    } else {
+                        const canMountMarkdown =
+                            tableMode !== 'tablem' &&
+                            typeof $typst.mapShadow === 'function' &&
+                            typeof encoder?.encode === 'function';
+
+                        let markdownPath = null;
+                        if (canMountMarkdown) {
+                            try {
+                                markdownPath = '/mdtypst/input.md';
+                                await $typst.mapShadow(markdownPath, encoder.encode(String(markdownForTypst)));
+                            } catch {
+                                markdownPath = null;
+                            }
+                        }
+
+                        typstContent = markdownToTypstWithCmarker(markdownForTypst, metadata, {
+                            tableMode,
+                            extraPreamble,
+                            includeMetadataPrelude: !nativeTemplateMode,
+                            markdownPath,
+                        });
+                    }
+                    markTiming('typst:convert:done');
+                    lastTypstSource = typstContent;
+
+                    markTiming('pdf:compile:start');
+                    const pdfData = await $typst.pdf({ mainContent: typstContent });
+                    markTiming('pdf:compiled');
+                    debugLog('pdf: compiled (jpeg transcode retry)', {
+                        bytes: pdfData?.byteLength ?? pdfData?.length ?? null,
+                    });
+                    return pdfData;
+                } catch {
+                    // If it still fails, continue with the existing error handling path.
+                }
+            }
+
             if (useFallback || noFallback) {
                 throw err;
             }

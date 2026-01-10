@@ -126,7 +126,7 @@ async function transcodeJpegToPngBytes(jpegBytes) {
 export async function mountAndRewriteImages(markdown, documentUrl, $typst, ctx) {
   if (!$typst || typeof $typst.mapShadow !== 'function') return markdown;
 
-  const { markTiming, debugLog, incCounter, timings } = ctx || {};
+  const { markTiming, debugLog, incCounter, timings, jpegMode = 'native' } = ctx || {};
 
   markTiming?.('images:scan:start');
   debugLog?.('images: scan:start');
@@ -179,6 +179,8 @@ export async function mountAndRewriteImages(markdown, documentUrl, $typst, ctx) 
     timings.counters.imagesFailed = 0;
     timings.counters.imagesFetchedBytes = 0;
     timings.counters.imagesFetchMs = 0;
+    timings.counters.imagesJpegCount = 0;
+    timings.counters.imagesJpegTranscoded = 0;
   }
 
   const runPool = async (tasks, limit) => {
@@ -227,10 +229,14 @@ export async function mountAndRewriteImages(markdown, documentUrl, $typst, ctx) 
       let bytesToMount = new Uint8Array(buf);
       const looksLikeJpeg = /\.(jpe?g)$/i.test(shadowPath) || /\.(jpe?g)(\?|#|$)/i.test(resolved.fetchUrl);
       if (looksLikeJpeg) {
-        const pngBytes = await transcodeJpegToPngBytes(bytesToMount);
-        if (pngBytes && pngBytes.byteLength > 0) {
-          shadowPath = shadowPath.replace(/\.(jpe?g)$/i, '.png');
-          bytesToMount = pngBytes;
+        if (timings?.counters) timings.counters.imagesJpegCount += 1;
+        if (jpegMode === 'transcode') {
+          const pngBytes = await transcodeJpegToPngBytes(bytesToMount);
+          if (pngBytes && pngBytes.byteLength > 0) {
+            shadowPath = shadowPath.replace(/\.(jpe?g)$/i, '.png');
+            bytesToMount = pngBytes;
+            if (timings?.counters) timings.counters.imagesJpegTranscoded += 1;
+          }
         }
       }
 
