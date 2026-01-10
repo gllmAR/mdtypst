@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,10 +19,10 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci
+        run: npm ci --omit=dev
 
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Vendor runtime deps (offline)
+        run: npm run offline:prepare
 
-      - name: Run tests
-        run: npm test -- --concurrency 2
+      - name: Build Pages artifact
+        run: npm run build:pages
