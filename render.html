@@ -21,6 +21,47 @@
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
+        #fixtures-panel {
+            margin: 10px 0 20px;
+            padding: 10px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+        #fixtures-panel summary {
+            cursor: pointer;
+            font-weight: 600;
+        }
+        #fixtures-status {
+            color: #555;
+            margin: 8px 0;
+        }
+        #fixtures-tree {
+            max-height: 320px;
+            overflow: auto;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+        #fixtures-tree details {
+            margin: 4px 0;
+        }
+        #fixtures-tree summary {
+            cursor: pointer;
+        }
+        #fixtures-tree a {
+            color: #1976d2;
+            text-decoration: none;
+        }
+        #fixtures-tree a:hover {
+            text-decoration: underline;
+        }
+        .fixtures-leaf {
+            margin: 3px 0 3px 18px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+        }
         #status {
             padding: 15px;
             margin-bottom: 20px;
@@ -81,6 +122,16 @@
     <div id="container">
         <h1>mdtypst v0.9</h1>
         <p>Statically hosted, URL-driven Markdown→PDF renderer</p>
+
+        <details id="fixtures-panel">
+            <summary>Examples (fixtures)</summary>
+            <div id="fixtures-status">Expand to load fixture list…</div>
+            <div id="fixtures-tree" aria-live="polite"></div>
+            <p style="margin: 10px 0 0; color: #666; font-size: 0.9em;">
+                Tip: open <a href="index.html">index.html</a> for a dedicated browser.
+            </p>
+        </details>
+
         <div id="status">Initializing...</div>
         <div id="pdf-container" style="display: none;">
             <iframe id="pdf-viewer"></iframe>
@@ -116,6 +167,123 @@
 
             await loadModuleScript(renderJs);
         })();
+    </script>
+
+    <script type="module">
+        const panel = document.getElementById('fixtures-panel');
+        const statusEl = document.getElementById('fixtures-status');
+        const treeEl = document.getElementById('fixtures-tree');
+
+        let loaded = false;
+
+        function buildTree(paths) {
+            const root = { kind: 'dir', children: new Map() };
+
+            for (const fullPath of paths) {
+                const parts = String(fullPath).split('/').filter(Boolean);
+                let node = root;
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    const isLeaf = i === parts.length - 1;
+                    if (!node.children.has(part)) {
+                        node.children.set(part, isLeaf ? { kind: 'file', path: fullPath } : { kind: 'dir', children: new Map() });
+                    }
+                    node = node.children.get(part);
+                }
+            }
+
+            return root;
+        }
+
+        function navigateToFixture(path) {
+            const u = new URL(window.location.href);
+            const params = new URLSearchParams(u.search);
+            params.set('src', path);
+            u.search = params.toString();
+            window.location.href = u.toString();
+        }
+
+        function renderNode(node, name = '') {
+            if (node.kind === 'file') {
+                const div = document.createElement('div');
+                div.className = 'fixtures-leaf';
+
+                const a = document.createElement('a');
+                a.href = '#';
+                a.textContent = name;
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    navigateToFixture(node.path);
+                });
+
+                div.appendChild(a);
+                return div;
+            }
+
+            const details = document.createElement('details');
+            details.open = false;
+            const summary = document.createElement('summary');
+            summary.textContent = name;
+            details.appendChild(summary);
+
+            const entries = Array.from(node.children.entries());
+            entries.sort(([aName, aNode], [bName, bNode]) => {
+                if (aNode.kind !== bNode.kind) return aNode.kind === 'dir' ? -1 : 1;
+                return aName.localeCompare(bName);
+            });
+
+            for (const [childName, childNode] of entries) {
+                details.appendChild(renderNode(childNode, childName));
+            }
+
+            return details;
+        }
+
+        async function loadFixturesOnce() {
+            if (loaded) return;
+            loaded = true;
+
+            statusEl.textContent = 'Loading fixture list…';
+            try {
+                const resp = await fetch('./fixtures-manifest.json', { cache: 'no-store' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                const files = Array.isArray(data?.files) ? data.files : [];
+
+                const mdFiles = files
+                    .map(String)
+                    .filter((p) => p.endsWith('.md'))
+                    .filter((p) => p.startsWith('test/fixtures/'))
+                    .sort();
+
+                if (mdFiles.length === 0) {
+                    statusEl.textContent = 'No fixtures found in manifest.';
+                    return;
+                }
+
+                statusEl.textContent = `Loaded ${mdFiles.length} Markdown fixtures.`;
+
+                // Render relative to test/fixtures/ for a cleaner tree.
+                const rel = mdFiles.map((p) => p.replace(/^test\/fixtures\//, ''));
+                const tree = buildTree(rel.map((p) => `test/fixtures/${p}`));
+
+                const container = document.createElement('div');
+                const entries = Array.from(tree.children.entries());
+                entries.sort(([a], [b]) => a.localeCompare(b));
+                for (const [topName, topNode] of entries) {
+                    container.appendChild(renderNode(topNode, topName));
+                }
+                treeEl.replaceChildren(container);
+            } catch (e) {
+                statusEl.textContent = 'Failed to load fixture list (fixtures-manifest.json not found).';
+                treeEl.textContent = '';
+                console.warn(e);
+            }
+        }
+
+        panel?.addEventListener('toggle', () => {
+            if (panel.open) loadFixturesOnce();
+        });
     </script>
 </body>
 </html>

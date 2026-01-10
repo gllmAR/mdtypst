@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-01-10T17:16:20.335Z",
+  "generatedAt": "2026-01-10T17:26:22.318Z",
   "files": [
     "test/fixtures/markdown/basic/blockquotes.md",
     "test/fixtures/markdown/basic/headings.md",
@@ -135,7 +135,6 @@
     "test/fixtures/markdown/pagination/single-page.md",
     "test/fixtures/markdown/pagination/tabloid.md",
     "test/fixtures/markdown/pagination/wide-margins.md",
-    "test/fixtures/markdown/pdfkit/unit-smoke.md",
     "test/fixtures/markdown/sidecar/layout-columns-two.md",
     "test/fixtures/markdown/sidecar/native-typ-sidecar.md",
     "test/fixtures/markdown/sidecar/page-alternating-margins.md",
