@@ -21,6 +21,18 @@ const downloadBtn = document.getElementById('download-btn');
 
 const urlParams = new URLSearchParams(window.location.search);
 const rendererMode = urlParams.get('renderer') || 'auto';
+// Debug logging is enabled by default; disable with ?debug=0.
+const debugEnabled = urlParams.get('debug') !== '0';
+
+function debugLog(...args) {
+    if (!debugEnabled) return;
+    try {
+        const t = typeof performance !== 'undefined' ? Math.round(performance.now()) : 0;
+        console.log(`[mdtypst +${t}ms]`, ...args);
+    } catch {
+        // ignore
+    }
+}
 
 /**
  * Update status message
@@ -350,6 +362,7 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
     if (!$typst || typeof $typst.mapShadow !== 'function') return markdown;
 
     markTiming('images:scan:start');
+    debugLog('images: scan:start');
 
     // Markdown images: ![alt](src "title")
     const mdImageRegex = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+("[^"]*"|'[^']*'))?\)/g;
@@ -391,8 +404,16 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
 
     timings.counters.imagesTotal = srcs.length;
 
+    markTiming('images:scan:done');
+    debugLog('images: scan:done', { total: srcs.length });
+
     const timeoutMs = 2500;
     const concurrency = 6;
+
+    timings.counters.imagesMounted = 0;
+    timings.counters.imagesFailed = 0;
+    timings.counters.imagesFetchedBytes = 0;
+    timings.counters.imagesFetchMs = 0;
 
     const runPool = async (tasks, limit) => {
         let idx = 0;
@@ -420,6 +441,7 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
         }
 
         try {
+            const t0 = performance.now();
             const resp = await fetchWithCache(resolved.fetchUrl, { timeoutMs });
             if (!resp.ok) {
                 failed.add(rawSrc);
@@ -428,6 +450,9 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
             }
 
             const buf = await resp.arrayBuffer();
+            const t1 = performance.now();
+            timings.counters.imagesFetchedBytes += buf.byteLength;
+            timings.counters.imagesFetchMs += (t1 - t0);
             await $typst.mapShadow(resolved.shadowPath, new Uint8Array(buf));
             mounted.set(rawSrc, resolved.shadowPath);
             incCounter('imagesMounted');
@@ -437,8 +462,24 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
         }
     });
 
+    markTiming('images:fetch:start');
     await runPool(tasks, concurrency);
+    markTiming('images:fetch:done');
     markTiming('images:mounted');
+
+    debugLog('images: mounted', {
+        total: timings.counters.imagesTotal ?? 0,
+        mounted: timings.counters.imagesMounted ?? 0,
+        failed: timings.counters.imagesFailed ?? 0,
+        fetchedBytes: timings.counters.imagesFetchedBytes ?? 0,
+        fetchMs: Math.round(timings.counters.imagesFetchMs ?? 0),
+        ms: (() => {
+            const m = timings.marks;
+            return m['images:fetch:start'] != null && m['images:fetch:done'] != null
+                ? Math.round(m['images:fetch:done'] - m['images:fetch:start'])
+                : null;
+        })(),
+    });
 
     // Rewrite markdown so Typst only sees safe /assets/... paths.
     const rewrittenMd = markdown.replace(mdImageRegex, (_full, alt, src, title) => {
@@ -823,9 +864,15 @@ async function ensureTypstPackageRegistry($typst) {
  * Wait for the typst.ts bundle to expose the global $typst instance.
  */
 async function waitForTypst() {
+    markTiming('typst:wait:start');
+    debugLog('waitForTypst: start');
     const scriptEl = document.getElementById('typst');
 
-    if (globalThis.$typst) return globalThis.$typst;
+    if (globalThis.$typst) {
+        markTiming('typst:wait:done');
+        debugLog('waitForTypst: already available');
+        return globalThis.$typst;
+    }
 
     await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -861,7 +908,8 @@ async function waitForTypst() {
     if (!globalThis.$typst) {
         throw new Error('Typst runtime loaded but $typst is missing');
     }
-
+    markTiming('typst:wait:done');
+    debugLog('waitForTypst: ready');
     return globalThis.$typst;
 }
 
@@ -872,6 +920,7 @@ async function fetchMarkdown(url) {
     try {
         markTiming('fetch:start');
         updateStatus(`Fetching markdown from: ${url}`);
+        debugLog('fetchMarkdown: start', url);
 
         const response = await fetchWithCache(url);
         if (!response.ok) {
@@ -880,6 +929,7 @@ async function fetchMarkdown(url) {
         
         const content = await response.text();
         markTiming('fetch:done');
+        debugLog('fetchMarkdown: done', { bytes: content.length });
         return content;
     } catch (error) {
         console.error('Failed to fetch markdown:', error);
@@ -893,6 +943,7 @@ async function fetchMarkdown(url) {
 async function compileToPDF(markdownContent, documentUrl = null) {
     try {
         markTiming('compile:start');
+        debugLog('compileToPDF: start', { documentUrl, rendererMode });
         updateStatus('Parsing frontmatter...');
         const { metadata, content } = parseFrontmatter(markdownContent);
 
@@ -903,10 +954,12 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         const { transformedMarkdown, svgAssets } =
             await renderMermaidBlocksToSvgAssets(sanitizedContent);
         markTiming('mermaid:done');
+        debugLog('mermaid: done', { assets: svgAssets.length });
 
         updateStatus('Compiling to PDF with Typst WASM...');
         const $typst = await waitForTypst();
         markTiming('typst:ready');
+        debugLog('typst: ready');
 
         // Configure package registry before the compiler initializes.
         await ensureTypstPackageRegistry($typst);
@@ -926,6 +979,11 @@ async function compileToPDF(markdownContent, documentUrl = null) {
 
         // Fetch + mount external/local images into shadow FS and rewrite Markdown to those paths.
         const markdownForTypst = await mountAndRewriteImages(transformedMarkdown, documentUrl, $typst);
+        debugLog('images: mounted', {
+            total: timings.counters.imagesTotal ?? 0,
+            mounted: timings.counters.imagesMounted ?? 0,
+            failed: timings.counters.imagesFailed ?? 0,
+        });
 
         // Heuristic: remote markdown often can't use @preview package imports on GH Pages.
         // Default to the fallback renderer for remote sources to avoid a slow failed attempt.
@@ -942,6 +1000,20 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         }
         if (!useFallback && !cmarkerAvailable) useFallback = true;
 
+        debugLog('renderer: selected', {
+            useFallback,
+            cmarkerAvailable,
+            rendererMode,
+            remoteDoc: (() => {
+                try {
+                    const docOrigin = documentUrl ? new URL(documentUrl, window.location.href).origin : null;
+                    return Boolean(docOrigin && docOrigin !== window.location.origin);
+                } catch {
+                    return null;
+                }
+            })(),
+        });
+
         updateStatus('Converting Markdown to Typst...');
         markTiming('typst:convert:start');
         let typstContent =
@@ -953,8 +1025,18 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         lastTypstSource = typstContent;
 
         try {
+            markTiming('pdf:compile:start');
             const pdfData = await $typst.pdf({ mainContent: typstContent });
             markTiming('pdf:compiled');
+            debugLog('pdf: compiled', {
+                bytes: pdfData?.byteLength ?? pdfData?.length ?? null,
+                ms: (() => {
+                    const m = timings.marks;
+                    return m['pdf:compile:start'] != null && m['pdf:compiled'] != null
+                        ? Math.round(m['pdf:compiled'] - m['pdf:compile:start'])
+                        : null;
+                })(),
+            });
             return pdfData;
         } catch (err) {
             if (useFallback) {
@@ -973,8 +1055,18 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             updateStatus('Retrying with fallback renderer...');
             typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl);
             lastTypstSource = typstContent;
+            markTiming('pdf:compile:start');
             const pdfData = await $typst.pdf({ mainContent: typstContent });
             markTiming('pdf:compiled');
+            debugLog('pdf: compiled (fallback)', {
+                bytes: pdfData?.byteLength ?? pdfData?.length ?? null,
+                ms: (() => {
+                    const m = timings.marks;
+                    return m['pdf:compile:start'] != null && m['pdf:compiled'] != null
+                        ? Math.round(m['pdf:compiled'] - m['pdf:compile:start'])
+                        : null;
+                })(),
+            });
             return pdfData;
         }
     } catch (error) {

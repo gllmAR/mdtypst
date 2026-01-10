@@ -1,5 +1,5 @@
 {
-  "name": "mdpdf-link",
+  "name": "markdowntypst",
   "version": "0.9.0",
   "description": "Statically hosted, URL-driven Markdown→PDF renderer",
   "main": "render.js",
