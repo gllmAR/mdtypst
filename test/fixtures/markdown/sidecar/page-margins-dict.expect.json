@@ -1,6 +1,8 @@
 {
   "mustContainTypst": [
-    "#set page(margin: (top: 3cm, bottom: 2cm, x: 1.5cm))",
     "Page margins dictionary"
+  ],
+  "mustContainSidecarUrl": [
+    "page-margins-dict.mdtypst.typ"
   ]
 }

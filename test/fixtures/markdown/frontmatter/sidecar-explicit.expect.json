@@ -1,6 +1,8 @@
 {
   "mustContainTypst": [
-    "#let sidecar_explicit_marker = 1",
     "sidecar explicit"
+  ],
+  "mustContainSidecarUrl": [
+    "sidecar-explicit.sidecar.typ"
   ]
 }

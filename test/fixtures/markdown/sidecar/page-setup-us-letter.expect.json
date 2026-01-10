@@ -4,5 +4,8 @@
     "#set page(paper: \"us-letter\"",
     "margin: (x: 1.5cm, y: 2cm)",
     "Page setup: US letter"
+  ],
+  "mustContainSidecarUrl": [
+    "page-setup-us-letter.mdtypst.typ"
   ]
 }

@@ -22,6 +22,8 @@ globalThis.__mdtypst__impl_loaded = true;
 let pdfBlob = null;
 let lastTypstSource = null;
 let cmarkerAvailable = true;
+let lastSidecarUrl = null;
+let lastTemplateUrl = null;
 
 const timings = createTimings();
 
@@ -159,6 +161,7 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         if (sidecar?.url) {
             debugLog('sidecar: loaded', { url: sidecar.url });
         }
+        lastSidecarUrl = sidecar?.url || null;
 
         const metadata = {
             ...(fmMetadata || {}),
@@ -191,6 +194,7 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         // Optional Typst styling template (sidecar-controlled).
         // We mount it into shadow FS and include it in the generated Typst document.
         const template = await loadTypstTemplateText(sidecar, { documentUrl });
+        lastTemplateUrl = template?.url || null;
         if (template && typeof $typst.mapShadow === 'function') {
             const encoder = new TextEncoder();
             await $typst.mapShadow('/mdtypst/template.typ', encoder.encode(template.text));
@@ -423,6 +427,8 @@ globalThis.__mdtypst = {
     getStatusText: () => statusEl?.textContent ?? '',
     getPdfBlob: () => pdfBlob,
     getTypstSource: () => lastTypstSource,
+    getSidecarUrl: () => lastSidecarUrl,
+    getTemplateUrl: () => lastTemplateUrl,
     getTimings: () => timings,
     compileToPDF,
     displayPDF,

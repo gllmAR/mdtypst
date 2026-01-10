@@ -1,3 +1,4 @@
-# sidecar missing template
+# sidecar missing sidecar
 
-Sidecar references a missing template; the document should still compile, but must not include `/mdtypst/template.typ`.
+This test passes an explicit `sidecar=` parameter pointing at a missing `.typ` sidecar.
+The document should still compile, and it must not inject `#include "/mdtypst/template.typ"`.

@@ -2,5 +2,8 @@
   "mustContainTypst": [
     "#outline()",
     "TOC enabled"
+  ],
+  "mustContainSidecarUrl": [
+    "toc-enabled.mdtypst.typ"
   ]
 }

@@ -152,6 +152,21 @@ async function getTypstSource(page) {
   }
 }
 
+async function getDebugInfo(page) {
+  try {
+    return await page.evaluate(() => {
+      const api = globalThis.__mdtypst;
+      if (!api) return null;
+      return {
+        sidecarUrl: typeof api.getSidecarUrl === 'function' ? api.getSidecarUrl() : null,
+        templateUrl: typeof api.getTemplateUrl === 'function' ? api.getTemplateUrl() : null,
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function readJsonIfExists(absPath) {
   try {
     const raw = await fs.readFile(absPath, 'utf8');
@@ -267,8 +282,16 @@ async function runOne(page, baseUrl, srcPath, { timeoutMs, writePdf, outDir, ren
         throw new Error('Expected Typst source but none was produced');
       }
 
+      const debugInfo = await getDebugInfo(page);
+
       const mustContain = hasOwn(expectations, 'mustContainTypst') ? expectations.mustContainTypst : null;
       const mustNotContain = hasOwn(expectations, 'mustNotContainTypst') ? expectations.mustNotContainTypst : null;
+      const mustContainSidecarUrl = hasOwn(expectations, 'mustContainSidecarUrl')
+        ? expectations.mustContainSidecarUrl
+        : null;
+      const mustContainTemplateUrl = hasOwn(expectations, 'mustContainTemplateUrl')
+        ? expectations.mustContainTemplateUrl
+        : null;
 
       if (Array.isArray(mustContain)) {
         for (const needle of mustContain) {
@@ -288,6 +311,32 @@ async function runOne(page, baseUrl, srcPath, { timeoutMs, writePdf, outDir, ren
             throw new Error(
               `Typst source unexpectedly contained substring: ${needle}\n\n--- Typst source ---\n${typstSource}`,
             );
+          }
+        }
+      }
+
+      if (Array.isArray(mustContainSidecarUrl)) {
+        const sidecarUrl = debugInfo?.sidecarUrl;
+        if (!sidecarUrl) {
+          throw new Error(`Expected sidecarUrl but none was reported`);
+        }
+        for (const needle of mustContainSidecarUrl) {
+          if (needle == null) continue;
+          if (!String(sidecarUrl).includes(String(needle))) {
+            throw new Error(`sidecarUrl missing expected substring: ${needle}\nsidecarUrl=${sidecarUrl}`);
+          }
+        }
+      }
+
+      if (Array.isArray(mustContainTemplateUrl)) {
+        const templateUrl = debugInfo?.templateUrl;
+        if (!templateUrl) {
+          throw new Error(`Expected templateUrl but none was reported`);
+        }
+        for (const needle of mustContainTemplateUrl) {
+          if (needle == null) continue;
+          if (!String(templateUrl).includes(String(needle))) {
+            throw new Error(`templateUrl missing expected substring: ${needle}\ntemplateUrl=${templateUrl}`);
           }
         }
       }

@@ -1,6 +1,8 @@
 {
   "mustContainTypst": [
-    "#let sidecar_cmarker_marker = 1",
     "sidecar cmarker"
+  ],
+  "mustContainSidecarUrl": [
+    "sidecar-cmarker.mdtypst.typ"
   ]
 }

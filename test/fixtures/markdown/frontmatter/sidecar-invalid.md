@@ -1,3 +1,4 @@
 # sidecar invalid
 
-Auto-discovered sidecar exists but is invalid JSON; it must be ignored (no crash, no injected preamble).
+Auto-discovered `.mdtypst.typ` sidecar exists but has an invalid `// mdtypst: {...}` JSON header.
+The header must be ignored (no crash), but the template should still be loaded.

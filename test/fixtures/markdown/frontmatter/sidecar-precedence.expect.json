@@ -1,9 +1,11 @@
 {
   "mustContainTypst": [
-    "#let sidecar_precedence_marker = 1",
     "sidecar precedence"
   ],
   "mustNotContainTypst": [
     "#outline()"
+  ],
+  "mustContainSidecarUrl": [
+    "sidecar-precedence.mdtypst.typ"
   ]
 }

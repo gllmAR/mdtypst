@@ -1,8 +1,9 @@
 {
   "mustContainTypst": [
+    "#include \"/mdtypst/template.typ\"",
     "sidecar invalid"
   ],
-  "mustNotContainTypst": [
-    "#let sidecar_invalid_marker = 1"
+  "mustContainSidecarUrl": [
+    "sidecar-invalid.mdtypst.typ"
   ]
 }

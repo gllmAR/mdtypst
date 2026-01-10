@@ -1,7 +1,10 @@
 {
   "mustContainTypst": [
-    "#set page(columns: 2)",
     "#set par(justify: true)",
+    "#include \"/mdtypst/template.typ\"",
     "Two column layout"
+  ],
+  "mustContainSidecarUrl": [
+    "layout-columns-two.mdtypst.typ"
   ]
 }

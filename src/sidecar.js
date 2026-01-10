@@ -78,7 +78,7 @@ async function tryFetchText(url, { timeoutMs = 8000 } = {}) {
 
 function buildAutoSidecarUrls(srcUrlString) {
   // Strategy: look for a sibling file next to the markdown.
-  // - foo.md -> foo.mdtypst.json then foo.mdtypst.yaml then foo.mdtypst.typ
+  // - foo.md -> foo.mdtypst.typ then foo.mdtypst.json then foo.mdtypst.yaml
   // - foo     -> foo.mdtypst.json then foo.mdtypst.yaml
   const urls = [];
   let abs;
@@ -90,12 +90,32 @@ function buildAutoSidecarUrls(srcUrlString) {
 
   const base = abs.toString();
   const isMd = /\.md$/i.test(abs.pathname);
+  const typUrl = isMd ? base.replace(/\.md$/i, '.mdtypst.typ') : `${base}.mdtypst.typ`;
   const jsonUrl = isMd ? base.replace(/\.md$/i, '.mdtypst.json') : `${base}.mdtypst.json`;
   const yamlUrl = isMd ? base.replace(/\.md$/i, '.mdtypst.yaml') : `${base}.mdtypst.yaml`;
-  const typUrl = isMd ? base.replace(/\.md$/i, '.mdtypst.typ') : `${base}.mdtypst.typ`;
 
-  urls.push(jsonUrl, yamlUrl, typUrl);
+  urls.push(typUrl, jsonUrl, yamlUrl);
   return urls;
+}
+
+function extractMdtypstJsonHeaderFromTyp(text) {
+  // Optional header to allow .typ sidecars to carry metadata/config.
+  // Format (single line):
+  //   // mdtypst: {"metadata": {"title": "..."}, "toc": false, ...}
+  // This is intentionally minimal and must be valid JSON on one line.
+  const lines = String(text).replace(/\r\n/g, '\n').split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const m = trimmed.match(/^\/\/\s*mdtypst\s*:\s*(\{.*\})\s*$/);
+    if (!m) return null;
+    try {
+      return JSON.parse(m[1]);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function loadSidecar({ srcUrl, explicitSidecarUrl } = {}) {
@@ -135,10 +155,13 @@ export async function loadSidecar({ srcUrl, explicitSidecarUrl } = {}) {
       } else if (isTypstPath(u.pathname)) {
         // Native Typst sidecar: treat the file as a template payload.
         // (We mount it and include it, so users can write pure Typst styling.)
+        const headerObj = extractMdtypstJsonHeaderFromTyp(text);
+        const normalized = headerObj ? normalizeSidecarObject(headerObj) : { metadata: {}, typst: {} };
         return {
           url,
-          metadata: {},
+          metadata: normalized.metadata || {},
           typst: {
+            ...(normalized.typst || {}),
             templateText: text,
           },
         };
