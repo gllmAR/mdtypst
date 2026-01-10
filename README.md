@@ -1,7 +1,7 @@
 # mdtypst
 mdtypst - markdown renderer
 
-mdtypst-link is a statically hosted, URL-driven Markdown→PDF renderer. 
+mdtypst is a statically hosted, URL-driven Markdown→PDF renderer. 
 
 A link like render.html?src=URL fetches a Markdown document, parses YAML frontmatter, and compiles it client-side using Typst in WASM. 
 

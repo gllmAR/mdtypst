@@ -1,12 +1,12 @@
 ---
 title: Sample Document
-author: mdpdf-link v0.9
+author: mdtypst v0.9
 date: 2026-01-09
 ---
 
 # Introduction
 
-This is a sample Markdown document to demonstrate **mdpdf-link v0.9**, a statically hosted, URL-driven Markdown→PDF renderer.
+This is a sample Markdown document to demonstrate **mdtypst v0.9**, a statically hosted, URL-driven Markdown→PDF renderer.
 
 ## Features
 
@@ -68,4 +68,4 @@ Ordered lists:
 
 ## Conclusion
 
-This demonstrates the deterministic, client-side rendering capabilities of mdpdf-link v0.9.
+This demonstrates the deterministic, client-side rendering capabilities of mdtypst v0.9.
