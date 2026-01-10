@@ -203,11 +203,45 @@ function escapeTypstString(value) {
         .replace(/"/g, '\\"');
 }
 
+function fnv1a32Hex(input) {
+    // Small, stable hash for generating deterministic shadow FS paths.
+    // Not cryptographic; just collision-resistant enough for typical asset sets.
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+        hash ^= input.charCodeAt(i);
+        hash = (hash * 0x01000193) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0');
+}
+
+function assetExtFromUrl(urlString) {
+    try {
+        const u = new URL(urlString, window.location.href);
+        const path = u.pathname || '';
+        const m = path.match(/\.(png|jpe?g|gif|svg|webp|bmp|tiff?|avif)$/i);
+        return m ? `.${m[1].toLowerCase()}` : '.bin';
+    } catch {
+        return '.bin';
+    }
+}
+
 function resolveLocalAsset(src, documentUrl) {
     try {
         if (!src) return null;
-        // Skip data URLs and remote URLs.
-        if (/^data:/i.test(src) || /^https?:/i.test(src)) return null;
+
+        // Skip data URLs.
+        if (/^data:/i.test(src)) return null;
+
+        // Virtual assets we mount ourselves (e.g. Mermaid SVGs).
+        if (src.startsWith('/assets/')) {
+            return { fetchUrl: null, shadowPath: src };
+        }
+
+        // Absolute remote URLs: mount into shadow FS under a safe synthetic path.
+        if (/^https?:/i.test(src)) {
+            const shadowPath = `/assets/remote/${fnv1a32Hex(src)}${assetExtFromUrl(src)}`;
+            return { fetchUrl: src, shadowPath };
+        }
 
         let abs;
         // Root-relative paths.
@@ -222,13 +256,114 @@ function resolveLocalAsset(src, documentUrl) {
             abs = new URL(src, base);
         }
 
-        // Only allow same-origin assets (served by our static server).
-        if (abs.origin !== window.location.origin) return null;
+        // Same-origin assets can use their pathname directly. Cross-origin assets get remapped.
+        if (abs.origin === window.location.origin) {
+            return { fetchUrl: abs.toString(), shadowPath: abs.pathname };
+        }
 
-        return { fetchUrl: abs.toString(), shadowPath: abs.pathname };
+        const fetchUrl = abs.toString();
+        const shadowPath = `/assets/remote/${fnv1a32Hex(fetchUrl)}${assetExtFromUrl(fetchUrl)}`;
+        return { fetchUrl, shadowPath };
     } catch {
         return null;
     }
+}
+
+async function mountAndRewriteImages(markdown, documentUrl, $typst) {
+    if (!$typst || typeof $typst.mapShadow !== 'function') return markdown;
+
+    // Markdown images: ![alt](src "title")
+    const mdImageRegex = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+("[^"]*"|'[^']*'))?\)/g;
+    // Basic HTML images: <img ... src="..." ...>
+    const htmlImgRegex = /<img\b[^>]*\bsrc\s*=\s*("[^"]+"|'[^']+'|[^\s>]+)[^>]*>/gi;
+
+    // Gather unique src strings as they appear in the document.
+    const srcs = [];
+    const seenSrc = new Set();
+
+    {
+        let m;
+        while ((m = mdImageRegex.exec(markdown)) !== null) {
+            const raw = m[2];
+            if (!raw) continue;
+            if (!seenSrc.has(raw)) {
+                seenSrc.add(raw);
+                srcs.push(raw);
+            }
+        }
+    }
+
+    {
+        let m;
+        while ((m = htmlImgRegex.exec(markdown)) !== null) {
+            let raw = m[1];
+            if (!raw) continue;
+            raw = raw.replace(/^['"]|['"]$/g, '');
+            if (!raw) continue;
+            if (!seenSrc.has(raw)) {
+                seenSrc.add(raw);
+                srcs.push(raw);
+            }
+        }
+    }
+
+    const mounted = new Map(); // rawSrc -> shadowPath
+    const failed = new Set();
+
+    for (const rawSrc of srcs) {
+        const resolved = resolveLocalAsset(rawSrc, documentUrl);
+        if (!resolved) {
+            failed.add(rawSrc);
+            continue;
+        }
+
+        if (resolved.fetchUrl == null) {
+            // Already virtual or otherwise doesn't need fetching.
+            mounted.set(rawSrc, resolved.shadowPath);
+            continue;
+        }
+
+        try {
+            const resp = await fetch(resolved.fetchUrl);
+            if (!resp.ok) {
+                failed.add(rawSrc);
+                continue;
+            }
+            const buf = await resp.arrayBuffer();
+            await $typst.mapShadow(resolved.shadowPath, new Uint8Array(buf));
+            mounted.set(rawSrc, resolved.shadowPath);
+        } catch {
+            failed.add(rawSrc);
+        }
+    }
+
+    // Rewrite markdown so Typst only sees safe /assets/... paths.
+    const rewrittenMd = markdown.replace(mdImageRegex, (_full, alt, src, title) => {
+        const shadow = mounted.get(src);
+        if (shadow) {
+            return `![${alt}](${shadow}${title ? ` ${title}` : ''})`;
+        }
+        // If we couldn't fetch/mount the image, drop the image syntax to avoid Typst failing.
+        const label = (alt && String(alt).trim()) ? String(alt).trim() : src;
+        return `Image unavailable: ${label}`;
+    });
+
+    const rewrittenHtml = rewrittenMd.replace(htmlImgRegex, (fullTag) => {
+        const srcMatch = fullTag.match(/\bsrc\s*=\s*("[^"]+"|'[^']+'|[^\s>]+)/i);
+        if (!srcMatch) return 'Image unavailable';
+        const raw = srcMatch[1].replace(/^['"]|['"]$/g, '');
+        const shadow = mounted.get(raw);
+        if (!shadow) {
+            const altMatch = fullTag.match(/\balt\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/i);
+            const alt = altMatch ? altMatch[1].replace(/^['"]|['"]$/g, '') : '';
+            return `Image unavailable: ${alt || raw}`;
+        }
+
+        // Replace only the src value; keep other attributes.
+        return fullTag.replace(srcMatch[1], `"${shadow}"`);
+    });
+
+    return rewrittenHtml;
 }
 
 /**
@@ -666,14 +801,6 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         // Configure package registry before the compiler initializes.
         await ensureTypstPackageRegistry($typst);
 
-        updateStatus('Converting Markdown to Typst...');
-        let typstContent =
-            rendererMode === 'fallback'
-                ? markdownToTypstFallback(transformedMarkdown, metadata, documentUrl)
-                : markdownToTypstWithCmarker(transformedMarkdown, metadata);
-
-        lastTypstSource = typstContent;
-
         // Ensure a clean slate across renders
         if (typeof $typst.resetShadow === 'function') {
             await $typst.resetShadow();
@@ -685,25 +812,18 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             for (const asset of svgAssets) {
                 await $typst.mapShadow(asset.path, encoder.encode(asset.svg));
             }
-
-            // Mount local images referenced by Markdown so Typst can load them in WASM.
-            // We resolve relative paths against the source document URL.
-            const imageRegex = /!\[[^\]]*\]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)/g;
-            const seen = new Set();
-            let m;
-            while ((m = imageRegex.exec(transformedMarkdown)) !== null) {
-                const src = m[1];
-                const resolved = resolveLocalAsset(src, documentUrl);
-                if (!resolved) continue;
-                if (seen.has(resolved.shadowPath)) continue;
-                seen.add(resolved.shadowPath);
-
-                const resp = await fetch(resolved.fetchUrl);
-                if (!resp.ok) continue;
-                const buf = await resp.arrayBuffer();
-                await $typst.mapShadow(resolved.shadowPath, new Uint8Array(buf));
-            }
         }
+
+        // Fetch + mount external/local images into shadow FS and rewrite Markdown to those paths.
+        const markdownForTypst = await mountAndRewriteImages(transformedMarkdown, documentUrl, $typst);
+
+        updateStatus('Converting Markdown to Typst...');
+        let typstContent =
+            rendererMode === 'fallback'
+                ? markdownToTypstFallback(markdownForTypst, metadata, documentUrl)
+                : markdownToTypstWithCmarker(markdownForTypst, metadata);
+
+        lastTypstSource = typstContent;
 
         try {
             const pdfData = await $typst.pdf({ mainContent: typstContent });
@@ -715,7 +835,7 @@ async function compileToPDF(markdownContent, documentUrl = null) {
 
             console.warn('Typst compilation failed; retrying with fallback renderer.', err);
             updateStatus('Retrying with fallback renderer...');
-            typstContent = markdownToTypstFallback(transformedMarkdown, metadata, documentUrl);
+            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl);
             lastTypstSource = typstContent;
             const pdfData = await $typst.pdf({ mainContent: typstContent });
             return pdfData;
