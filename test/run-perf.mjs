@@ -17,6 +17,7 @@ function parseArgs(argv) {
     runs: 3,
     headful: false,
     timeoutMs: 180_000,
+    waitViewer: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -27,6 +28,7 @@ function parseArgs(argv) {
     else if (a === '--runs' && argv[i + 1]) args.runs = Math.max(1, Number(argv[++i]));
     else if (a === '--headful') args.headful = true;
     else if (a === '--timeout' && argv[i + 1]) args.timeoutMs = Number(argv[++i]);
+    else if (a === '--wait-viewer') args.waitViewer = true;
   }
 
   if (!args.src) {
@@ -63,7 +65,7 @@ function ms(n) {
   return `${Math.round(n)}ms`;
 }
 
-async function runOnce(page, url, timeoutMs) {
+async function runOnce(page, url, timeoutMs, { waitViewer }) {
   const t0 = Date.now();
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
 
@@ -78,6 +80,17 @@ async function runOnce(page, url, timeoutMs) {
 
   const status = await page.evaluate(() => document.getElementById('status')?.textContent ?? '');
   const ok = await page.evaluate(() => document.getElementById('status')?.classList.contains('success') ?? false);
+
+  if (ok && waitViewer) {
+    await page.waitForFunction(
+      () => {
+        const t = globalThis.__mdtypst?.getTimings?.();
+        return Boolean(t?.marks?.['pdf:viewerLoaded']);
+      },
+      { timeout: timeoutMs },
+    );
+  }
+
   const timings = await page.evaluate(() => globalThis.__mdtypst?.getTimings?.() ?? null);
 
   const totalMs = Date.now() - t0;
@@ -100,6 +113,7 @@ function summarizeTimings(t) {
     typstConvert: d('typst:convert:start', 'typst:convert:done'),
     pdfCompile: d('typst:convert:done', 'pdf:compiled'),
     toDisplayed: d('compile:start', 'pdf:displayed'),
+    toViewerLoaded: d('compile:start', 'pdf:viewerLoaded'),
     counters: t.counters || {},
   };
 }
@@ -126,12 +140,12 @@ async function main() {
   try {
     const results = [];
     for (let i = 0; i < args.runs; i++) {
-      const r = await runOnce(page, url, args.timeoutMs);
+      const r = await runOnce(page, url, args.timeoutMs, { waitViewer: args.waitViewer });
       results.push(r);
       const s = summarizeTimings(r.timings);
       if (s) {
         console.log(
-          `run ${i + 1}/${args.runs}: total=${ms(r.totalMs)} fetch=${s.fetch != null ? ms(s.fetch) : 'n/a'} images=${s.images != null ? ms(s.images) : 'n/a'} pdf=${s.pdfCompile != null ? ms(s.pdfCompile) : 'n/a'} mounted=${s.counters.imagesMounted ?? 0}/${s.counters.imagesTotal ?? 0} failed=${s.counters.imagesFailed ?? 0}`,
+          `run ${i + 1}/${args.runs}: total=${ms(r.totalMs)} fetch=${s.fetch != null ? ms(s.fetch) : 'n/a'} images=${s.images != null ? ms(s.images) : 'n/a'} pdf=${s.pdfCompile != null ? ms(s.pdfCompile) : 'n/a'} viewer=${s.toViewerLoaded != null ? ms(s.toViewerLoaded) : 'n/a'} mounted=${s.counters.imagesMounted ?? 0}/${s.counters.imagesTotal ?? 0} failed=${s.counters.imagesFailed ?? 0}`,
         );
       } else {
         console.log(`run ${i + 1}/${args.runs}: total=${ms(r.totalMs)}`);

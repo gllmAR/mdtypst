@@ -935,6 +935,18 @@ function displayPDF(pdfData) {
     try {
         pdfBlob = new Blob([pdfData], { type: 'application/pdf' });
         const pdfUrl = URL.createObjectURL(pdfBlob);
+
+        // Mark when the PDF viewer actually finishes loading the blob URL.
+        // This is useful for performance measurement (time-to-visible) and differs from compile time.
+        try {
+            const onLoad = () => {
+                markTiming('pdf:viewerLoaded');
+                pdfViewer.removeEventListener('load', onLoad);
+            };
+            pdfViewer.addEventListener('load', onLoad);
+        } catch {
+            // ignore
+        }
         
         pdfViewer.src = pdfUrl;
         pdfContainer.style.display = 'block';
