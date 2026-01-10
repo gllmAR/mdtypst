@@ -399,7 +399,6 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
             return;
         }
 
-        const t = setTimeout(() => {}, timeoutMs);
         try {
             const resp = await fetchWithCache(resolved.fetchUrl, { timeoutMs });
             if (!resp.ok) {
@@ -415,8 +414,6 @@ async function mountAndRewriteImages(markdown, documentUrl, $typst) {
         } catch {
             failed.add(rawSrc);
             incCounter('imagesFailed');
-        } finally {
-            clearTimeout(t);
         }
     });
 
