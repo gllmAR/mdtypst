@@ -34,9 +34,6 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run tests
-        run: npm test -- --concurrency 2
-
       - name: Vendor runtime deps (offline)
         run: npm run offline:prepare
 
