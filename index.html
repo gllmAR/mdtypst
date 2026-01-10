@@ -129,6 +129,46 @@
             color: #666;
             font-size: 0.9em;
         }
+
+        .fixtures-browser {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+        .fixtures-browser h2 {
+            margin-top: 0;
+        }
+        .fixtures-status {
+            color: #555;
+            margin: 10px 0 15px;
+        }
+        .fixtures-tree {
+            max-height: 420px;
+            overflow: auto;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+        .fixtures-tree details {
+            margin: 4px 0;
+        }
+        .fixtures-tree summary {
+            cursor: pointer;
+        }
+        .fixtures-tree a {
+            color: #1976d2;
+            text-decoration: none;
+        }
+        .fixtures-tree a:hover {
+            text-decoration: underline;
+        }
+        .fixtures-leaf {
+            margin: 3px 0 3px 18px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+        }
     </style>
 </head>
 <body>
@@ -140,10 +180,11 @@
             <h2>Features</h2>
             <ul>
                 <li><strong>URL-Driven:</strong> Simply provide a link to any markdown file</li>
-                <li><strong>YAML Frontmatter:</strong> Parse document metadata (title, author, date)</li>
+                <li><strong>YAML Frontmatter (optional):</strong> Parse document metadata (title, author, date, page setup)</li>
                 <li><strong>Typst WASM:</strong> Client-side PDF compilation with high-quality typesetting</li>
-                <li><strong>Markdown Rendering:</strong> Full support via cmarker-style conversion</li>
-                <li><strong>Mermaid Diagrams:</strong> Visual diagrams rendered through oxdraw</li>
+                <li><strong>Markdown Rendering:</strong> Uses Typst <code>@preview/cmarker</code> when available, with a built-in fallback renderer</li>
+                <li><strong>Mermaid Diagrams:</strong> Mermaid fences rendered to SVG and embedded into Typst</li>
+                <li><strong>Typst Sidecar Templates:</strong> Optional <code>.mdtypst.typ</code> next to Markdown for fully native styling</li>
                 <li><strong>Zero Server Compute:</strong> Everything runs deterministically in your browser</li>
                 <li><strong>Native Display:</strong> View PDF directly or download for offline use</li>
             </ul>
@@ -162,12 +203,19 @@
             <p><small>Replace <code>YOUR_MARKDOWN_URL</code> with the URL of any publicly accessible Markdown file.</small></p>
         </div>
 
+        <div class="fixtures-browser">
+            <h2>Fixture Browser (Examples)</h2>
+            <p style="margin: 0; color: #555;">Browse the repository's Markdown fixtures and render them in your browser. Clicking a file opens <code>render.html</code> with <code>?src=...</code>.</p>
+            <div id="fixtures-status" class="fixtures-status">Loading fixture list…</div>
+            <div id="fixtures-tree" class="fixtures-tree" aria-live="polite"></div>
+        </div>
+
         <div class="architecture">
             <h2>How It Works</h2>
             <ol>
                 <li><strong>Fetch:</strong> Retrieve Markdown document from specified URL</li>
-                <li><strong>Parse:</strong> Extract YAML frontmatter metadata</li>
-                <li><strong>Convert:</strong> Transform Markdown to Typst format (cmarker)</li>
+                <li><strong>Parse:</strong> Extract optional YAML frontmatter metadata</li>
+                <li><strong>Convert:</strong> Transform Markdown to Typst (cmarker or fallback)</li>
                 <li><strong>Compile:</strong> Generate PDF using Typst WASM engine</li>
                 <li><strong>Render:</strong> Display PDF in browser or offer download</li>
             </ol>
@@ -185,7 +233,7 @@
                 <div>Markdown parsing</div>
             </div>
             <div class="tech-item">
-                <strong>oxdraw</strong>
+                <strong>Mermaid</strong>
                 <div>Mermaid diagrams</div>
             </div>
             <div class="tech-item">
@@ -213,5 +261,99 @@
             <p>No server compute • No databases • No API calls</p>
         </div>
     </div>
+
+    <script type="module">
+        const statusEl = document.getElementById('fixtures-status');
+        const treeEl = document.getElementById('fixtures-tree');
+
+        function buildTree(paths) {
+            const root = { kind: 'dir', children: new Map() };
+
+            for (const fullPath of paths) {
+                const parts = String(fullPath).split('/').filter(Boolean);
+                let node = root;
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    const isLeaf = i === parts.length - 1;
+                    if (!node.children.has(part)) {
+                        node.children.set(part, isLeaf ? { kind: 'file', path: fullPath } : { kind: 'dir', children: new Map() });
+                    }
+                    node = node.children.get(part);
+                }
+            }
+
+            return root;
+        }
+
+        function renderNode(node, name = '') {
+            if (node.kind === 'file') {
+                const div = document.createElement('div');
+                div.className = 'fixtures-leaf';
+                const a = document.createElement('a');
+                a.href = `render.html?src=${encodeURIComponent(node.path)}`;
+                a.textContent = name;
+                div.appendChild(a);
+                return div;
+            }
+
+            const details = document.createElement('details');
+            details.open = false;
+            const summary = document.createElement('summary');
+            summary.textContent = name;
+            details.appendChild(summary);
+
+            const entries = Array.from(node.children.entries());
+            entries.sort(([aName, aNode], [bName, bNode]) => {
+                if (aNode.kind !== bNode.kind) return aNode.kind === 'dir' ? -1 : 1;
+                return aName.localeCompare(bName);
+            });
+
+            for (const [childName, childNode] of entries) {
+                details.appendChild(renderNode(childNode, childName));
+            }
+
+            return details;
+        }
+
+        async function loadFixtures() {
+            try {
+                const resp = await fetch('./fixtures-manifest.json', { cache: 'no-store' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                const files = Array.isArray(data?.files) ? data.files : [];
+
+                const mdFiles = files
+                    .map(String)
+                    .filter((p) => p.endsWith('.md'))
+                    .filter((p) => p.startsWith('test/fixtures/'))
+                    .sort();
+
+                if (mdFiles.length === 0) {
+                    statusEl.textContent = 'No fixtures found in manifest.';
+                    return;
+                }
+
+                statusEl.textContent = `Loaded ${mdFiles.length} Markdown fixtures.`;
+
+                // Render relative to test/fixtures/ for a cleaner tree.
+                const rel = mdFiles.map((p) => p.replace(/^test\/fixtures\//, ''));
+                const tree = buildTree(rel.map((p) => `test/fixtures/${p}`));
+
+                const container = document.createElement('div');
+                const entries = Array.from(tree.children.entries());
+                entries.sort(([a], [b]) => a.localeCompare(b));
+                for (const [topName, topNode] of entries) {
+                    container.appendChild(renderNode(topNode, topName));
+                }
+                treeEl.replaceChildren(container);
+            } catch (e) {
+                statusEl.textContent = 'Failed to load fixture list (fixtures-manifest.json not found).';
+                treeEl.textContent = '';
+                console.warn(e);
+            }
+        }
+
+        loadFixtures();
+    </script>
 </body>
 </html>

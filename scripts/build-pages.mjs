@@ -1,6 +1,8 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 
+import { generateFixtureManifest } from './generate-fixture-manifest.mjs';
+
 const repoRoot = path.resolve(new URL('..', import.meta.url).pathname);
 const distDir = path.join(repoRoot, 'dist');
 
@@ -52,6 +54,15 @@ async function main() {
   if (await pathExists(srcDir)) {
     await copyDir(srcDir, path.join(distDir, 'src'));
   }
+
+  // Include fixture documents for the index.html fixture browser.
+  const fixturesDir = path.join(repoRoot, 'test', 'fixtures');
+  if (await pathExists(fixturesDir)) {
+    await copyDir(fixturesDir, path.join(distDir, 'test', 'fixtures'));
+  }
+
+  // Generate a manifest that index.html can fetch in both dev and Pages builds.
+  await generateFixtureManifest({ repoRoot, outFile: path.join(distDir, 'fixtures-manifest.json') });
 
   console.log(`Built ${path.relative(repoRoot, distDir)}/ for GitHub Pages.`);
 }
