@@ -1,5 +1,0 @@
-{
-  "typst": {
-    "preamble": "#show heading.where(level: 1): set align(center)\n#show heading.where(level: 1): smallcaps\n#show heading.where(level: 2): set text(style: \"italic\")\n#show heading.where(level: 2): it => { it.body + [.] }"
-  }
-}

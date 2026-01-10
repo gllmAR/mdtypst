@@ -1,8 +1,0 @@
-{
-  "metadata": {
-    "title": "sidecar cmarker"
-  },
-  "typst": {
-    "preamble": "#let sidecar_cmarker_marker = 1"
-  }
-}

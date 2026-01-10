@@ -12,7 +12,7 @@ import { createLogger, createTimings } from './logging.js';
 import { renderMermaidBlocksToSvgAssets } from './mermaid.js';
 import { mountAndRewriteImages } from './assets.js';
 import { markdownToTypstFallback, markdownToTypstWithCmarker } from './typst-doc.js';
-import { loadSidecar, loadTypstTemplateText } from './sidecar.js';
+import { loadSidecar } from './sidecar.js';
 
 // Flag used by the root entrypoint (`render.js`) and the fixture harness to
 // confirm the modular implementation loaded.
@@ -192,13 +192,16 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         }
 
         // Optional Typst styling template (sidecar-controlled).
-        // We mount it into shadow FS and include it in the generated Typst document.
-        const template = await loadTypstTemplateText(sidecar, { documentUrl });
-        lastTemplateUrl = template?.url || null;
-        if (template && typeof $typst.mapShadow === 'function') {
+        // Sidecars are native Typst templates; we mount them into shadow FS and include them.
+        const templateText = sidecar?.typst?.templateText;
+        const hasTemplate = Boolean(templateText && String(templateText).trim());
+        lastTemplateUrl = hasTemplate ? sidecar?.url || null : null;
+        if (hasTemplate && typeof $typst.mapShadow === 'function') {
             const encoder = new TextEncoder();
-            await $typst.mapShadow('/mdtypst/template.typ', encoder.encode(template.text));
+            await $typst.mapShadow('/mdtypst/template.typ', encoder.encode(String(templateText)));
         }
+
+        const nativeTemplateMode = hasTemplate;
 
         // Mount mermaid SVG assets so Typst can `image("/assets/...")`
         if (typeof $typst.mapShadow === 'function') {
@@ -226,12 +229,8 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         const tableMode = tablesParam === '1' || tablesParam === 'tablem' ? 'tablem' : 'cmarker';
 
         const extraPreambleParts = [];
-        if (template) {
+        if (hasTemplate) {
             extraPreambleParts.push('#include "/mdtypst/template.typ"');
-        }
-        const sidecarPreamble = sidecar?.typst?.preamble;
-        if (sidecarPreamble && String(sidecarPreamble).trim()) {
-            extraPreambleParts.push(String(sidecarPreamble).trim());
         }
         const extraPreamble = extraPreambleParts.length ? `${extraPreambleParts.join('\n')}\n` : '';
 
@@ -275,9 +274,16 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         markTiming('typst:convert:start');
         let typstContent;
         if (useFallback) {
-            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl, { extraPreamble });
+            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl, {
+                extraPreamble,
+                includeMetadataPrelude: !nativeTemplateMode,
+            });
         } else {
-            typstContent = markdownToTypstWithCmarker(markdownForTypst, metadata, { tableMode, extraPreamble });
+            typstContent = markdownToTypstWithCmarker(markdownForTypst, metadata, {
+                tableMode,
+                extraPreamble,
+                includeMetadataPrelude: !nativeTemplateMode,
+            });
         }
         markTiming('typst:convert:done');
 
@@ -313,7 +319,10 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             }
 
             updateStatus('Retrying with fallback renderer...');
-            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl, { extraPreamble });
+            typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl, {
+                extraPreamble,
+                includeMetadataPrelude: !nativeTemplateMode,
+            });
             lastTypstSource = typstContent;
             markTiming('pdf:compile:start');
             const pdfData = await $typst.pdf({ mainContent: typstContent });

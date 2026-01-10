@@ -36,35 +36,40 @@ Open:
 
 ### Sidecar document description (styling)
 
-To customize styling without putting YAML into the Markdown file, mdtypst can load a sidecar “document description” file next to the Markdown.
+To customize styling without putting YAML into the Markdown file, mdtypst can load a native Typst sidecar template next to the Markdown.
 
 Auto-discovery (when `src=...` is provided):
 
 - For `foo.md`, mdtypst tries:
-	- `foo.mdtypst.json`
-	- `foo.mdtypst.yaml`
+	- `foo.mdtypst.typ`
 
 You can also provide an explicit URL:
 
 - `sidecar=<url>`
 
-Supported sidecar keys (JSON or flat YAML):
+The sidecar is mounted into Typst at `/mdtypst/template.typ` and injected via:
 
-- Metadata keys (same as frontmatter): `title`, `author`, `date`, `paper`, `margin`, `margin_x`, `margin_y`, `font`, `fontSize`/`font_size`, `justify`, `toc`
-- Typst styling:
-	- `typst.template`: URL to a `.typ` file that will be mounted and `#include`’d before content.
-	- `typst.preamble`: raw Typst code string inserted before content (use carefully).
+- `#include "/mdtypst/template.typ"`
 
-Example `foo.mdtypst.json`:
+When a `.mdtypst.typ` sidecar is present, mdtypst runs in “native template mode”: it still converts the Markdown to Typst content, but it does not inject the built-in page/title/TOC prelude. Your template owns layout.
 
-```json
-{
-	"paper": "a4",
-	"margin": "2cm",
-	"typst": {
-		"template": "./house-style.typ",
-		"preamble": "#set par(justify: true)"
-	}
+Use the injected `mdtypst` dictionary (from Markdown frontmatter) inside your template if you want to set page/title/TOC based on metadata.
+
+Minimal example (`foo.mdtypst.typ`):
+
+```typst
+#set page(
+	paper: if mdtypst.paper != none { mdtypst.paper } else { "a4" },
+	margin: if mdtypst.margin != none { mdtypst.margin } else { 2cm },
+)
+
+#if mdtypst.title != none {
+	#set document(title: mdtypst.title)
+	= #mdtypst.title
+}
+
+#if mdtypst.toc == true {
+	#outline()
 }
 ```
 
@@ -127,6 +132,7 @@ Supported keys:
 - `fontSize` / `font_size` (string): length like `11pt` → `#set text(size: ...)`
 - `justify` (boolean): → `#set par(justify: ...)`
 - `toc` (boolean): when `true`, inserts `#outline()` after the title header
+	- Note: if a `.mdtypst.typ` sidecar is present (native template mode), the template should insert `#outline()` instead.
 
 
 ## Tests

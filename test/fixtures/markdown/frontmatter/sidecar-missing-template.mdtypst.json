@@ -1,9 +1,0 @@
-{
-  "metadata": {
-    "title": "sidecar missing template"
-  },
-  "typst": {
-    "template": "./does-not-exist.typ",
-    "preamble": "#let sidecar_missing_template_marker = 1"
-  }
-}

@@ -1,6 +1,5 @@
 {
   "mustContainTypst": [
-    "#set par(justify: true)",
     "#include \"/mdtypst/template.typ\"",
     "Two column layout"
   ],

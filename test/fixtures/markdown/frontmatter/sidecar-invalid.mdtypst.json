@@ -1,3 +1,0 @@
-{
-  "metadata": { "title": "sidecar invalid" },
-  "typst": { "preamble": "#let sidecar_invalid_marker = 1"

@@ -1,8 +1,6 @@
 {
   "mustContainTypst": [
-    "#set document(title:",
-    "#set page(paper: \"us-letter\"",
-    "margin: (x: 1.5cm, y: 2cm)",
+    "#include \"/mdtypst/template.typ\"",
     "Page setup: US letter"
   ],
   "mustContainSidecarUrl": [

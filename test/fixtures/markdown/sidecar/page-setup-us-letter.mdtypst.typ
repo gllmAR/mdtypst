@@ -1,3 +1,2 @@
-// mdtypst: {"metadata":{"title":"Page setup: US letter","paper":"us-letter","margin_x":"1.5cm","margin_y":"2cm"}}
-
+#set page(paper: "us-letter", margin: (x: 1.5cm, y: 2cm))
 #set par(justify: true)

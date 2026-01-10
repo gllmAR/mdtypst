@@ -1,6 +1,6 @@
 {
   "mustContainTypst": [
-    "#outline()",
+    "#include \"/mdtypst/template.typ\"",
     "TOC enabled"
   ],
   "mustContainSidecarUrl": [

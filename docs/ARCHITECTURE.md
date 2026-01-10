@@ -51,18 +51,19 @@ Offline support is handled by vendoring these runtimes into `vendor/`.
 
 ## Sidecar document description
 
-To maximize interoperability with existing Typst styling workflows while keeping Markdown files clean, mdtypst supports an optional sidecar file next to the Markdown:
+To maximize interoperability with Typst styling workflows while keeping Markdown files clean, mdtypst supports an optional native Typst sidecar template next to the Markdown:
 
-- `foo.md` → tries `foo.mdtypst.json` then `foo.mdtypst.yaml`
+- `foo.md` → tries `foo.mdtypst.typ`
 
-The sidecar can:
+When present:
 
-- Provide metadata (same keys as frontmatter) to control built-in prelude generation.
-- Provide Typst-native styling via `typst.template` and/or `typst.preamble`.
+- mdtypst mounts the sidecar into the Typst shadow FS at `/mdtypst/template.typ` and injects `#include "/mdtypst/template.typ"` before content.
+- The `.typ` sidecar is treated as pure Typst; it is the recommended place to define page setup, headers/footers, show rules, etc.
 
-When `typst.template` is provided:
+Native template mode:
 
-- mdtypst fetches the template, mounts it into the Typst shadow FS at `/mdtypst/template.typ`, and injects `#include "/mdtypst/template.typ"` before content.
+- If a sidecar template is present, mdtypst disables the JS-generated metadata prelude (page/title/TOC). The template controls layout.
+- The generated Typst always defines `mdtypst` as a Typst dictionary derived from Markdown frontmatter so templates can read metadata without any non-Typst sidecar formats.
 
 ## Notes / constraints
 

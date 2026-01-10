@@ -1,5 +1,3 @@
-// mdtypst: {"metadata":{"title":"Headers and footers"}}
-
 #set page(
   header: [Header],
   footer: [Footer],

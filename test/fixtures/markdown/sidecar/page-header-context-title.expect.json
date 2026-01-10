@@ -1,6 +1,6 @@
 {
   "mustContainTypst": [
-    "#set document(title:",
+    "#include \"/mdtypst/template.typ\"",
     "Context title header"
   ],
   "mustContainSidecarUrl": [

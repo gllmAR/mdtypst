@@ -1,8 +1,0 @@
-{
-  "metadata": {
-    "toc": false
-  },
-  "typst": {
-    "preamble": "#let sidecar_precedence_marker = 1"
-  }
-}

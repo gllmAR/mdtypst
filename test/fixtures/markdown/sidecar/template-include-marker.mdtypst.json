@@ -1,6 +1,0 @@
-{
-  "typst": {
-    "template": "./template-include-marker.typ",
-    "preamble": "#set text(size: 11pt)"
-  }
-}

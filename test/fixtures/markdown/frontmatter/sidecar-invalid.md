@@ -1,4 +1,4 @@
 # sidecar invalid
 
-Auto-discovered `.mdtypst.typ` sidecar exists but has an invalid `// mdtypst: {...}` JSON header.
-The header must be ignored (no crash), but the template should still be loaded.
+Auto-discovered `.mdtypst.typ` sidecar exists and is a pure Typst template.
+The renderer must not require any special header and must still load the template.

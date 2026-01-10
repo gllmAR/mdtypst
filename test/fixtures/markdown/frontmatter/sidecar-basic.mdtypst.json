@@ -1,8 +1,0 @@
-{
-  "paper": "a5",
-  "margin": "1cm",
-  "typst": {
-    "template": "./sidecar-basic.typ",
-    "preamble": "#set par(justify: true)"
-  }
-}

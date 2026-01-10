@@ -1,6 +1,56 @@
 import { escapeTypstString, typstPreludeFromMetadata } from './frontmatter.js';
 import { resolveLocalAsset } from './assets.js';
 
+function isSafeTypstRawValue(text) {
+  const s = String(text).trim();
+  if (!s) return false;
+
+  // Length-like literals (used for margins, font sizes, etc.)
+  if (/^-?\d+(?:\.\d+)?(?:pt|mm|cm|in|em|rem|%)$/i.test(s)) return true;
+
+  // Simple dictionary/tuple-like literals, e.g. (x: 1cm, y: 2cm)
+  if (s.startsWith('(') && s.endsWith(')')) {
+    // Keep this intentionally conservative.
+    if (!/^[0-9a-zA-Z_:+,\.\-\s()]*$/.test(s)) return false;
+    return true;
+  }
+
+  return false;
+}
+
+function typstLiteral(value, { allowRaw = false } = {}) {
+  if (value == null) return 'none';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+
+  const s = String(value);
+  if (allowRaw && isSafeTypstRawValue(s)) return s.trim();
+  return `"${escapeTypstString(s)}"`;
+}
+
+function typstMdtypstContextFromMetadata(metadata) {
+  const margin = metadata?.margin;
+  const marginX = metadata?.margin_x ?? metadata?.marginX;
+  const marginY = metadata?.margin_y ?? metadata?.marginY;
+  const fontSize = metadata?.font_size ?? metadata?.fontSize;
+
+  const lines = [];
+  lines.push(`#let mdtypst = (`);
+  lines.push(`  title: ${typstLiteral(metadata?.title)},`);
+  lines.push(`  author: ${typstLiteral(metadata?.author)},`);
+  lines.push(`  date: ${typstLiteral(metadata?.date)},`);
+  lines.push(`  toc: ${typstLiteral(metadata?.toc)},`);
+  lines.push(`  paper: ${typstLiteral(metadata?.paper)},`);
+  lines.push(`  margin: ${typstLiteral(margin, { allowRaw: true })},`);
+  lines.push(`  margin_x: ${typstLiteral(marginX, { allowRaw: true })},`);
+  lines.push(`  margin_y: ${typstLiteral(marginY, { allowRaw: true })},`);
+  lines.push(`  font: ${typstLiteral(metadata?.font)},`);
+  lines.push(`  font_size: ${typstLiteral(fontSize, { allowRaw: true })},`);
+  lines.push(`  justify: ${typstLiteral(metadata?.justify)},`);
+  lines.push(`)`);
+  return `${lines.join('\n')}\n`;
+}
+
 // ------------------------
 // cmarker-based renderer
 // ------------------------
@@ -8,7 +58,7 @@ import { resolveLocalAsset } from './assets.js';
 export function markdownToTypstWithCmarker(
   markdown,
   metadata,
-  { tableMode = 'cmarker', extraPreamble = '' } = {},
+  { tableMode = 'cmarker', extraPreamble = '', includeMetadataPrelude = true } = {},
 ) {
   let typst = '';
 
@@ -33,32 +83,38 @@ export function markdownToTypstWithCmarker(
     typst += `}\n`;
   }
 
-  if (metadata.title) {
-    typst += `#set document(title: "${escapeTypstString(metadata.title)}")\n`;
-  }
-  if (metadata.author) {
-    typst += `#set document(author: "${escapeTypstString(metadata.author)}")\n`;
-  }
+  typst += typstMdtypstContextFromMetadata(metadata);
 
-  typst += typstPreludeFromMetadata(metadata);
+  if (includeMetadataPrelude) {
+    if (metadata.title) {
+      typst += `#set document(title: "${escapeTypstString(metadata.title)}")\n`;
+    }
+    if (metadata.author) {
+      typst += `#set document(author: "${escapeTypstString(metadata.author)}")\n`;
+    }
+
+    typst += typstPreludeFromMetadata(metadata);
+  }
 
   if (extraPreamble && String(extraPreamble).trim()) {
     typst += `${String(extraPreamble).trim()}\n\n`;
   }
 
-  if (metadata.title) {
-    typst += `#align(center)[\n  #text(size: 24pt, weight: "bold")[${escapeTypstString(metadata.title)}]\n]\n`;
-    if (metadata.author) {
-      typst += `#align(center)[\n  #text(size: 12pt)[${escapeTypstString(metadata.author)}]\n]\n`;
+  if (includeMetadataPrelude) {
+    if (metadata.title) {
+      typst += `#align(center)[\n  #text(size: 24pt, weight: "bold")[${escapeTypstString(metadata.title)}]\n]\n`;
+      if (metadata.author) {
+        typst += `#align(center)[\n  #text(size: 12pt)[${escapeTypstString(metadata.author)}]\n]\n`;
+      }
+      if (metadata.date) {
+        typst += `#align(center)[\n  #text(size: 10pt)[${escapeTypstString(metadata.date)}]\n]\n`;
+      }
+      typst += `\n`;
     }
-    if (metadata.date) {
-      typst += `#align(center)[\n  #text(size: 10pt)[${escapeTypstString(metadata.date)}]\n]\n`;
-    }
-    typst += `\n`;
-  }
 
-  if (metadata.toc === true) {
-    typst += `#outline()\n\n`;
+    if (metadata.toc === true) {
+      typst += `#outline()\n\n`;
+    }
   }
 
   typst += `#cmarker.render(\n`;
@@ -227,7 +283,7 @@ export function markdownToTypstFallback(
   markdown,
   metadata,
   documentUrl = null,
-  { extraPreamble = '' } = {},
+  { extraPreamble = '', includeMetadataPrelude = true } = {},
 ) {
   // Very small Markdown subset -> Typst markup.
   // This is used when Typst package fetching is unavailable and cmarker can't be imported.
@@ -452,26 +508,32 @@ export function markdownToTypstFallback(
 
   let typst = '';
 
-  if (metadata.title) {
-    typst += `#set document(title: "${escapeTypstString(metadata.title)}")\n`;
-  }
-  if (metadata.author) {
-    typst += `#set document(author: "${escapeTypstString(metadata.author)}")\n`;
-  }
+  typst += typstMdtypstContextFromMetadata(metadata);
 
-  typst += typstPreludeFromMetadata(metadata);
+  if (includeMetadataPrelude) {
+    if (metadata.title) {
+      typst += `#set document(title: "${escapeTypstString(metadata.title)}")\n`;
+    }
+    if (metadata.author) {
+      typst += `#set document(author: "${escapeTypstString(metadata.author)}")\n`;
+    }
+
+    typst += typstPreludeFromMetadata(metadata);
+  }
   if (extraPreamble && String(extraPreamble).trim()) {
     typst += `${String(extraPreamble).trim()}\n\n`;
   }
 
-  if (metadata.title) {
-    typst += `= ${markdownInlineToTypst(metadata.title)}\n\n`;
-    if (metadata.author) typst += `${markdownInlineToTypst(metadata.author)}\n\n`;
-    if (metadata.date) typst += `${markdownInlineToTypst(metadata.date)}\n\n`;
-  }
+  if (includeMetadataPrelude) {
+    if (metadata.title) {
+      typst += `= ${markdownInlineToTypst(metadata.title)}\n\n`;
+      if (metadata.author) typst += `${markdownInlineToTypst(metadata.author)}\n\n`;
+      if (metadata.date) typst += `${markdownInlineToTypst(metadata.date)}\n\n`;
+    }
 
-  if (metadata.toc === true) {
-    typst += `#outline()\n\n`;
+    if (metadata.toc === true) {
+      typst += `#outline()\n\n`;
+    }
   }
 
   for (const b of blocks) {
