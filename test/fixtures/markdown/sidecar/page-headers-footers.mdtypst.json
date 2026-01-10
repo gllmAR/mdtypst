@@ -1,0 +1,5 @@
+{
+  "typst": {
+    "preamble": "#set page(\n  header: [Header],\n  footer: [Footer],\n  numbering: \"1\",\n  number-align: center,\n)"
+  }
+}

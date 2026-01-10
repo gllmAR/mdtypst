@@ -1,0 +1,5 @@
+{
+  "typst": {
+    "preamble": "#set page(columns: 2)\n#set par(justify: true)"
+  }
+}

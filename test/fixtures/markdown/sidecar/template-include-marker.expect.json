@@ -1,0 +1,7 @@
+{
+  "mustContainTypst": [
+    "#include \"/mdtypst/template.typ\"",
+    "#set text(size: 11pt)",
+    "Template include marker"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "mustContainTypst": [
+    "#set document(title:",
+    "#set page(header: align(right + horizon, context document.title))",
+    "Context title header"
+  ]
+}

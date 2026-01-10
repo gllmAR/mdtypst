@@ -1,0 +1,6 @@
+{
+  "mustContainTypst": [
+    "#outline()",
+    "TOC enabled"
+  ]
+}

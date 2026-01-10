@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "title": "Context title header"
+  },
+  "typst": {
+    "preamble": "#set page(header: align(right + horizon, context document.title))"
+  }
+}
