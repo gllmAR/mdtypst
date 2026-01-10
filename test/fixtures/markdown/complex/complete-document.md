@@ -1,8 +1,6 @@
 ---
-mdpdf:
-  render:
-    title: Complete Document Example
-    author: mdpdf-core
+title: Complete Document Example
+author: mdpdf-core
 ---
 
 # Complete Document Example

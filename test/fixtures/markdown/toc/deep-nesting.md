@@ -1,10 +1,3 @@
----
-mdpdf:
-  engine:
-    toc:
-      maxDepth: 4
----
-
 # Level 1
 
 ## Level 2

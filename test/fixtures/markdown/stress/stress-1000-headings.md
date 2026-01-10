@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: Stress 1000 Headings (fixture)
+title: Stress 1000 Headings (fixture)
 ---
 
 # Main Title

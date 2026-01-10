@@ -1,9 +1,5 @@
 ---
-mdpdf:
-  engine:
-    toc:
-      title: Contents
-      maxDepth: 2
+title: Contents
 ---
 
 # Chapter 1

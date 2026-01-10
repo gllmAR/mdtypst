@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: "Stress Test: 100 Tables"
+title: "Stress Test: 100 Tables"
 ---
 
 # Stress Test: 100 Tables

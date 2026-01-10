@@ -5,8 +5,11 @@
   "main": "render.js",
   "type": "module",
   "scripts": {
-    "serve": "npx serve -p 8000",
-    "test": "echo \"Open render.html?src=sample.md in browser for testing\""
+    "serve": "npx serve -p 8000 -c serve.json",
+    "test": "node test/run-fixtures.mjs",
+    "test:clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('test/output',{recursive:true,force:true}))\"",
+    "offline:prepare": "node scripts/offline-prepare.mjs",
+    "build:pages": "node scripts/build-pages.mjs"
   },
   "keywords": [
     "markdown",
@@ -19,6 +22,12 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "serve": "^14.2.0"
+    "playwright": "^1.41.2",
+    "serve": "^14.2.0",
+    "serve-handler": "^6.1.6"
+  },
+  "dependencies": {
+    "@myriaddreamin/typst-all-in-one.ts": "0.7.0-rc2",
+    "mermaid": "^10.0.0"
   }
 }

@@ -1,9 +1,6 @@
 ---
-mdpdf:
-  render:
-    title: API Reference
-    author: mdpdf-core
-    subject: Technical Documentation
+title: API Reference
+author: mdpdf-core
 ---
 
 # API Reference

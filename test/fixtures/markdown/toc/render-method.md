@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  engine:
-    toc: true
+toc: true
 ---
 
 # First Section

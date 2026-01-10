@@ -1,10 +1,6 @@
 ---
-mdpdf:
-   render:
-      title: Quarterly Report Q4 2024
-      author: Analytics Team
-      subject: Financial Report
-      keywords: quarterly, report, finance, Q4, 2024
+title: Quarterly Report Q4 2024
+author: Analytics Team
 ---
 
 # Quarterly Report Q4 2024

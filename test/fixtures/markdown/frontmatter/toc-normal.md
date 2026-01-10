@@ -1,4 +1,13 @@
+---
+title: TOC Enabled
+toc: true
+---
+
 # TOC Enabled
+
+## What is being tested
+
+- `toc: true` inserts `#outline()`.
 
 ## Section 1
 

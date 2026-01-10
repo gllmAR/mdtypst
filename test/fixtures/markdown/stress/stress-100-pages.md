@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: "Stress Test: 100 Pages"
+title: "Stress Test: 100 Pages"
 ---
 
 # Stress Test: 100 Pages

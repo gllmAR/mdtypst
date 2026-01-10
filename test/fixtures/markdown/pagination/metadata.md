@@ -1,11 +1,6 @@
 ---
-mdpdf:
-
-  render:
-    title: My Test Document
-    author: Test Author
-    subject: Testing
-    keywords: test, pdf, markdown
+title: My Test Document
+author: Test Author
 ---
 
 # Test Document

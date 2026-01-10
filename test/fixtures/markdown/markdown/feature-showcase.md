@@ -1,9 +1,6 @@
 ---
-mdpdf:
-  render:
-    title: Markdown Feature Showcase
-    author: mdpdf-core
-    subject: Markdown Specification Test
+title: Markdown Feature Showcase
+author: mdpdf-core
 ---
 
 # Markdown Feature Showcase

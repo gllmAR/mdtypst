@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: Performance Test
+title: Performance Test
 ---
 
 # Performance Test

@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: Stress Long Line (fixture)
+title: Stress Long Line (fixture)
 ---
 
 # Long Line

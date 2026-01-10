@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: "Stress Test: 100 Code Blocks"
+title: "Stress Test: 100 Code Blocks"
 ---
 
 # Stress Test: 100 Code Blocks

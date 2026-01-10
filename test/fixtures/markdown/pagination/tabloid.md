@@ -1,8 +1,5 @@
 ---
-mdpdf:
-
-  engine:
-    pageSize: TABLOID
+paper: tabloid
 ---
 
 # Tabloid Document

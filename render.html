@@ -88,6 +88,32 @@
         </div>
     </div>
 
-    <script type="module" src="./render.js"></script>
+    <script>
+        (async () => {
+            const localTypst = new URL('./vendor/typst/index.js', window.location.href).href;
+            const cdnTypst =
+                'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-all-in-one.ts@0.7.0-rc2/dist/esm/index.js';
+            const renderJs = new URL('./render.js', window.location.href).href;
+
+            const loadModuleScript = (src) =>
+                new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.type = 'module';
+                    script.src = src;
+                    script.onload = () => resolve();
+                    script.onerror = (e) => reject(e);
+                    document.head.appendChild(script);
+                });
+
+            try {
+                await loadModuleScript(localTypst);
+            } catch (e) {
+                console.warn('Local Typst bundle missing; falling back to CDN.', e);
+                await loadModuleScript(cdnTypst);
+            }
+
+            await loadModuleScript(renderJs);
+        })();
+    </script>
 </body>
 </html>

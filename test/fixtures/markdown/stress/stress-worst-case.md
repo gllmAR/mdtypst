@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: "Worst Case: Table + List + Images"
+title: "Worst Case: Table + List + Images"
 ---
 
 # Worst Case: Table + List + Images

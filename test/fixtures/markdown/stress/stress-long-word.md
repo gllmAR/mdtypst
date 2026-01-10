@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: Stress Long Word (fixture)
+title: Stress Long Word (fixture)
 ---
 
 # Long Word

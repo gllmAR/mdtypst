@@ -1,8 +1,5 @@
 ---
-mdpdf:
-
-  engine:
-    pageSize: LEGAL
+paper: legal
 ---
 
 # Legal Document

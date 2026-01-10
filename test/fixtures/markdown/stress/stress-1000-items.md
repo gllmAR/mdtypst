@@ -1,7 +1,5 @@
 ---
-mdpdf:
-  render:
-    title: "Stress Test: 1000 List Items"
+title: "Stress Test: 1000 List Items"
 ---
 
 # Stress Test: 1000 List Items

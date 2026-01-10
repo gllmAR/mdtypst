@@ -1,8 +1,5 @@
 ---
-mdpdf:
-
-  engine:
-    pageSize: LETTER
+paper: letter
 ---
 
 # Letter Document

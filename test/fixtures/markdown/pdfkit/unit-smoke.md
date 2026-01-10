@@ -1,9 +1,5 @@
 ---
-mdpdf:
-  engine:
-    outline: false
-  render:
-    title: pdfkit Unit Smoke
+title: pdfkit Unit Smoke
 ---
 
 # Hello
