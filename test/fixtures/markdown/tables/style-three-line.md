@@ -14,4 +14,3 @@ Goal: a booktabs-ish table (no vertical rules, only a top rule, header rule, and
 |---|:---:|---|
 | /api/render | POST | Renders markdown into a PDF blob. This description is long enough to wrap and should still look clean with minimal rules. |
 | /api/status | GET | Returns a small health payload. |
-`
