@@ -785,7 +785,9 @@ export function markdownToTypstFallback(
         out += `${inline(b.text)}\n\n`;
       } else if (b.type === 'blockquote') {
         const inner = renderBlocksToTypst(Array.isArray(b.blocks) ? b.blocks : []).trimEnd();
-        out += `#quote[\n${inner}\n]\n\n`;
+        // Typst's `quote` adds quotation marks; Markdown blockquotes are typically
+        // rendered as an indented block with a left rule.
+        out += `#block(inset: (left: 1em), stroke: (left: 1pt))[\n${inner}\n]\n\n`;
       } else if (b.type === 'code') {
         const lang = b.lang ? `, lang: "${escapeTypstString(b.lang)}"` : '';
         out += `#raw("${escapeTypstString(b.code)}"${lang})\n\n`;
