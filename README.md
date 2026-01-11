@@ -31,6 +31,7 @@ Open:
 	- `cmarker` forces the Typst `@preview/cmarker` path.
 	- `fallback` forces the built-in Markdown→Typst converter.
 - `tables` (optional): `1` or `tablem` enables pipe-table rewriting using `@preview/tablem`.
+- `math` (optional): `0` disables TeX math processing in the fallback renderer.
 - `debug` (optional): `0` disables debug logging (default is enabled).
 - `noFallback` (optional): `1` disables retrying with the fallback renderer if Typst compilation fails.
 
@@ -139,6 +140,20 @@ Supported keys:
 
 ```bash
 npm run test:clean && npm test -- --concurrency 4
+```
+
+By default, the fixture runner processes only `test/fixtures/markdown/**/*.md` and writes PDFs under `test/output/` preserving that directory structure.
+
+To render the docs in `examples/` as well, pass an explicit pattern:
+
+```bash
+npm test -- --pattern examples
+```
+
+If you prefer glob patterns, quote them so your shell doesn’t expand them into many arguments:
+
+```bash
+npm test -- --pattern 'examples/**/*.md'
 ```
 
 ## Debugging

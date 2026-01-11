@@ -178,7 +178,7 @@ export function markdownToTypstWithCmarker(
 // Fallback renderer
 // ------------------------
 
-function markdownInlineToTypst(text) {
+function markdownInlineToTypst(text, { mathEnabled = false } = {}) {
   // Minimal inline support for the bundled demo documents.
   // Convert Markdown emphasis to Typst emphasis markers:
   // - **bold** -> *bold*
@@ -235,7 +235,17 @@ function markdownInlineToTypst(text) {
 
   let out = String(text);
 
-  // Inline math: $...$ (keep dependency-free; treat as raw text in fallback mode).
+  // Inline code: `code`
+  // Convert to a Typst raw node so it doesn't interact with markup parsing.
+  // Must run before math parsing so `$` inside code spans isn't treated as math.
+  const codeSpans = [];
+  const addCodeSpan = (content) => {
+    const idx = codeSpans.push({ content }) - 1;
+    return `${CODE_OPEN}${idx}${CODE_CLOSE}`;
+  };
+  out = out.replace(/`([^`\n]+?)`/g, (_m, inner) => addCodeSpan(inner));
+
+  // Inline math: $...$
   // We placeholder these before escaping so LaTeX-like content doesn't confuse Typst parsing.
   const math = [];
   const addMath = (content) => {
@@ -278,15 +288,6 @@ function markdownInlineToTypst(text) {
     (_m, label, url) => addLink(url, label),
   );
 
-  // Inline code: `code`
-  // Convert to a Typst raw node so it doesn't interact with markup parsing.
-  const codeSpans = [];
-  const addCodeSpan = (content) => {
-    const idx = codeSpans.push({ content }) - 1;
-    return `${CODE_OPEN}${idx}${CODE_CLOSE}`;
-  };
-  out = out.replace(/`([^`\n]+?)`/g, (_m, inner) => addCodeSpan(inner));
-
   out = inlineTextToTypst(out);
 
   // Restore link placeholders.
@@ -302,8 +303,11 @@ function markdownInlineToTypst(text) {
     const idx = Number(idxStr);
     const segment = math[idx];
     if (!segment) return '';
-    const raw = `$${segment.content}$`;
-    return `#raw("${escapeTypstString(raw)}")`;
+    if (!mathEnabled) {
+      const raw = `$${segment.content}$`;
+      return `#raw("${escapeTypstString(raw)}")`;
+    }
+    return `#mi("${escapeTypstString(String(segment.content))}")`;
   });
 
   // Restore inline code placeholders.
@@ -352,6 +356,7 @@ export function markdownToTypstFallback(
   // - Otherwise, treat them as footnotes: render in-text as Typst `#footnote[...]`
   //   and drop the definition blocks from the body.
   const footnotesEnabled = metadata?.footnotes !== false && metadata?.notes !== false;
+  const mathEnabled = metadata?.math !== false;
   const footnoteDefsRaw = new Map();
   let hasReferencesSection = false;
 
@@ -734,6 +739,15 @@ export function markdownToTypstFallback(
   typst += `  }\n`;
   typst += `}\n\n`;
 
+  // TeX math support (fallback renderer) via MiTeX.
+  // Import only when enabled and detected.
+  const hasInlineMath = /\$(?!\s)[^$\n]+?\$/.test(String(markdown));
+  const hasBlockMath = blocks.some((b) => b?.type === 'math');
+  const hasAnyMath = mathEnabled && (hasInlineMath || hasBlockMath);
+  if (hasAnyMath) {
+    typst += `#import "@preview/mitex:0.2.4": *\n\n`;
+  }
+
   if (includeMetadataPrelude) {
     if (metadata.title) {
       typst += `#set document(title: "${escapeTypstString(metadata.title)}")\n`;
@@ -748,7 +762,7 @@ export function markdownToTypstFallback(
   const footnoteDefsTypst = new Map();
   if (footnotesEnabled && footnoteDefsRaw.size) {
     for (const [id, defText] of footnoteDefsRaw.entries()) {
-      footnoteDefsTypst.set(id, markdownInlineToTypst(defText));
+      footnoteDefsTypst.set(id, markdownInlineToTypst(defText, { mathEnabled }));
     }
   }
 
@@ -758,7 +772,7 @@ export function markdownToTypstFallback(
 
     // Inline footnotes: ^[text]
     const inlineFootnote = (_m, inner) => {
-      const rendered = markdownInlineToTypst(String(inner));
+      const rendered = markdownInlineToTypst(String(inner), { mathEnabled });
       return `#footnote[${rendered}]`;
     };
     out = out.replace(/\^\[([^\]]+?)\]/g, inlineFootnote);
@@ -774,7 +788,7 @@ export function markdownToTypstFallback(
         if (!def) return full;
         if (hasReferencesSection) {
           // Citation mode: show literal bracketed key.
-          return `\\[${markdownInlineToTypst(id)}\\]`;
+          return `\\[${markdownInlineToTypst(id, { mathEnabled })}\\]`;
         }
         return `#footnote[${def}]`;
       };
@@ -788,16 +802,16 @@ export function markdownToTypstFallback(
     return out;
   };
 
-  const inline = (text) => injectFootnotes(markdownInlineToTypst(text));
+  const inline = (text) => injectFootnotes(markdownInlineToTypst(text, { mathEnabled }));
   if (extraPreamble && String(extraPreamble).trim()) {
     typst += `${String(extraPreamble).trim()}\n\n`;
   }
 
   if (includeMetadataPrelude) {
     if (metadata.title) {
-      typst += `= ${markdownInlineToTypst(metadata.title)}\n\n`;
-      if (metadata.author) typst += `${markdownInlineToTypst(metadata.author)}\n\n`;
-      if (metadata.date) typst += `${markdownInlineToTypst(metadata.date)}\n\n`;
+      typst += `= ${markdownInlineToTypst(metadata.title, { mathEnabled })}\n\n`;
+      if (metadata.author) typst += `${markdownInlineToTypst(metadata.author, { mathEnabled })}\n\n`;
+      if (metadata.date) typst += `${markdownInlineToTypst(metadata.date, { mathEnabled })}\n\n`;
     }
 
     if (metadata.toc === true) {
@@ -837,8 +851,17 @@ export function markdownToTypstFallback(
           out += `#image("${escapeTypstString(srcForTypst)}")\n\n`;
         }
       } else if (b.type === 'math') {
-        const raw = `$$\n${b.content}\n$$`;
-        out += `#raw("${escapeTypstString(raw)}")\n\n`;
+        if (!mathEnabled) {
+          const raw = `$$\n${b.content}\n$$`;
+          out += `#raw("${escapeTypstString(raw)}")\n\n`;
+        } else {
+          const content = String(b.content ?? '');
+          if (!content.includes('`')) {
+            out += `#mitex(\`\n${content}\n\`)\n\n`;
+          } else {
+            out += `#mitex("${escapeTypstString(content)}")\n\n`;
+          }
+        }
       } else if (b.type === 'hr') {
         out += `#line(length: 100%)\n\n`;
       } else if (b.type === 'table') {
@@ -987,7 +1010,7 @@ export function rewriteMarkdownPipeTablesToTablem(markdown) {
   };
 
   const normalizeDataRow = (line) => {
-    const cells = splitPipeRow(line).map((cell) => markdownInlineToTypst(cell));
+    const cells = splitPipeRow(line).map((cell) => markdownInlineToTypst(cell, { mathEnabled: false }));
     return normalizePipeRow(cells);
   };
 

@@ -200,6 +200,13 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             metadata.footnotes = false;
         }
 
+        // Optional URL/frontmatter override for LaTeX math processing.
+        // - `math=0` disables converting $...$ / $$...$$ into Typst math.
+        const mathParam = urlParams.get('math');
+        if (mathParam === '0') {
+            metadata.math = false;
+        }
+
         updateStatus('Preparing Mermaid diagrams...');
         markTiming('mermaid:start');
         const { transformedMarkdown, svgAssets } = await renderMermaidBlocksToSvgAssets(sanitizedContent, {
@@ -298,6 +305,12 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         const hasFootnoteSyntax =
             footnotesEnabled && /\^\[[\s\S]*?\]|\[\^[^\]]+\]/.test(String(markdownForTypst));
 
+        // If LaTeX math is present, prefer the fallback renderer (auto mode).
+        // The fallback path can render TeX math via MiTeX; cmarker treats it as plain text.
+        const mathEnabled = metadata?.math !== false;
+        const hasMathSyntax =
+            mathEnabled && /(\$\$[\s\S]+?\$\$)|\$(?!\s)[^$\n]+?\$/.test(String(markdownForTypst));
+
         // Heuristic: remote markdown often can't use @preview package imports on GH Pages.
         // Default to the fallback renderer for remote sources to avoid a slow failed attempt.
         let useFallback = rendererMode === 'fallback';
@@ -305,6 +318,9 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             useFallback = false;
         }
         if (!useFallback && rendererMode === 'auto' && hasFootnoteSyntax) {
+            useFallback = true;
+        }
+        if (!useFallback && rendererMode === 'auto' && hasMathSyntax) {
             useFallback = true;
         }
         if (!useFallback && rendererMode === 'auto') {
@@ -325,6 +341,7 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             cmarkerAvailable,
             rendererMode,
             hasFootnoteSyntax,
+            hasMathSyntax,
             remoteDoc: (() => {
                 try {
                     const docOrigin = documentUrl ? new URL(documentUrl, window.location.href).origin : null;
@@ -438,6 +455,36 @@ async function compileToPDF(markdownContent, documentUrl = null) {
                     return pdfData;
                 } catch {
                     // If it still fails, continue with the existing error handling path.
+                }
+            }
+
+            // If we're already using the fallback renderer, we still have one safe retry:
+            // if math processing is enabled but MiTeX can't be imported (offline / registry blocked),
+            // re-render the fallback output with math disabled so the document still compiles.
+            if (useFallback && !noFallback && (metadata?.math !== false)) {
+                try {
+                    const msg = String(err?.message ?? err).toLowerCase();
+                    if (msg.includes('unresolved import') && (msg.includes('mitex') || msg.includes('@preview/mitex'))) {
+                        updateStatus('Retrying with math disabled...');
+                        const metadataNoMath = { ...(metadata || {}), math: false };
+                        markTiming('typst:convert:start');
+                        typstContent = markdownToTypstFallback(markdownForTypst, metadataNoMath, documentUrl, {
+                            extraPreamble,
+                            includeMetadataPrelude: !nativeTemplateMode,
+                        });
+                        markTiming('typst:convert:done');
+                        lastTypstSource = typstContent;
+
+                        markTiming('pdf:compile:start');
+                        const pdfData = await $typst.pdf({ mainContent: typstContent });
+                        markTiming('pdf:compiled');
+                        debugLog('pdf: compiled (math disabled retry)', {
+                            bytes: pdfData?.byteLength ?? pdfData?.length ?? null,
+                        });
+                        return pdfData;
+                    }
+                } catch {
+                    // If retry fails, fall through to existing error handling.
                 }
             }
 

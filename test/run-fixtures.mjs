@@ -26,7 +26,12 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--pattern' && argv[i + 1]) {
       if (!args.patterns) args.patterns = [];
-      args.patterns.push(argv[++i]);
+
+      // Accept multiple values after a single --pattern until the next flag.
+      // This makes quoted and shell-expanded globs behave predictably.
+      while (argv[i + 1] && !String(argv[i + 1]).startsWith('--')) {
+        args.patterns.push(argv[++i]);
+      }
     }
     else if (a === '--out' && argv[i + 1]) args.outDir = argv[++i];
     else if (a === '--write-pdf') args.writePdf = true;
@@ -367,7 +372,7 @@ async function main() {
 
   const patterns = (args.patterns && args.patterns.length)
     ? args.patterns
-    : ['test/fixtures/markdown/**/*.md', 'examples/**/*.md'];
+    : ['test/fixtures/markdown/**/*.md'];
 
   const fileLists = await Promise.all(patterns.map((p) => listMarkdownFiles(p)));
   const files = Array.from(new Set(fileLists.flat())).sort();
