@@ -1,3 +1,7 @@
+---
+footnotes: false
+---
+
 # Frontmatter: disable footnotes
 
 This text has a footnote marker[^1] but notes are disabled.

@@ -328,13 +328,90 @@ export function markdownToTypstFallback(
 ) {
   // Very small Markdown subset -> Typst markup.
   // This is used when Typst package fetching is unavailable and cmarker can't be imported.
-  const lines = String(markdown).replace(/\r\n/g, '\n').split('\n');
-  const blocks = [];
 
-  let i = 0;
-  const eatBlank = () => {
-    while (i < lines.length && lines[i].trim() === '') i++;
-  };
+  // --- Footnotes / citations (GFM-ish) ---
+  // Support named footnotes:
+  //   In text:  [^id]
+  //   Def:      [^id]: content
+  // with optional indented continuation lines.
+  //
+  // Behavior:
+  // - If the document contains a "References" section, treat these as citations:
+  //   render in-text as `[id]` and keep the definitions under References as a list.
+  // - Otherwise, treat them as footnotes: render in-text as Typst `#footnote[...]`
+  //   and drop the definition blocks from the body.
+  const footnotesEnabled = metadata?.footnotes !== false && metadata?.notes !== false;
+  const footnoteDefsRaw = new Map();
+  let hasReferencesSection = false;
+
+  const cleanedLines = [];
+  {
+    const srcLines = String(markdown).replace(/\r\n/g, '\n').split('\n');
+    let inReferences = false;
+    let referencesLevel = null;
+
+    const headingMatch = (l) => /^(#{1,6})\s+(.+?)\s*$/.exec(String(l ?? ''));
+
+    for (let li = 0; li < srcLines.length; li++) {
+      const line = srcLines[li];
+
+      const hm = headingMatch(line);
+      if (hm) {
+        const level = hm[1].length;
+        const text = String(hm[2] ?? '').trim().toLowerCase();
+        if (inReferences && referencesLevel != null && level <= referencesLevel) {
+          inReferences = false;
+          referencesLevel = null;
+        }
+        if (text === 'references') {
+          inReferences = true;
+          referencesLevel = level;
+          hasReferencesSection = true;
+        }
+        cleanedLines.push(line);
+        continue;
+      }
+
+      const m = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(line.trimEnd());
+      if (!m || !footnotesEnabled) {
+        cleanedLines.push(line);
+        continue;
+      }
+
+      const id = String(m[1]).trim();
+      const parts = [String(m[2] ?? '').trim()];
+
+      // Capture continuation lines that are indented (commonmark-ish).
+      // Stop at the first non-indented non-blank line.
+      while (li + 1 < srcLines.length) {
+        const next = srcLines[li + 1];
+        if (next.trim() === '') {
+          parts.push('');
+          li++;
+          continue;
+        }
+        if (/^(\s{2,}|\t)/.test(next)) {
+          parts.push(next.trim());
+          li++;
+          continue;
+        }
+        break;
+      }
+
+      const defText = parts.filter((p) => p !== '').join(' ').trim();
+      if (id) footnoteDefsRaw.set(id, defText);
+
+      if (inReferences) {
+        // Keep under References, but render as a regular bullet list item.
+        cleanedLines.push(`- [${id}]: ${defText}`);
+      }
+      // Else: drop the definition block from the rendered output.
+    }
+  }
+
+  const lines = cleanedLines;
+
+  const isBlockquoteLine = (line) => /^\s{0,3}>\s?/.test(String(line ?? ''));
 
   const isFenceStart = (line) => line.startsWith('```');
   const isHeading = (line) => /^#{1,6}\s+/.test(line);
@@ -412,158 +489,200 @@ export function markdownToTypstFallback(
     return aligns;
   };
 
-  while (i < lines.length) {
-    eatBlank();
-    if (i >= lines.length) break;
+  const parseBlocksFromLines = (sourceLines) => {
+    const blocks = [];
+    let i = 0;
+    const eatBlank = () => {
+      while (i < sourceLines.length && sourceLines[i].trim() === '') i++;
+    };
 
-    const line = lines[i];
+    while (i < sourceLines.length) {
+      eatBlank();
+      if (i >= sourceLines.length) break;
 
-    // Code fence
-    if (isFenceStart(line)) {
-      const lang = line.slice(3).trim();
-      i++;
-      const codeLines = [];
-      while (i < lines.length && !lines[i].startsWith('```')) {
-        codeLines.push(lines[i]);
+      const line = sourceLines[i];
+
+      // Code fence
+      if (isFenceStart(line)) {
+        const lang = line.slice(3).trim();
         i++;
-      }
-      if (i < lines.length && lines[i].startsWith('```')) i++;
-      const code = codeLines.join('\n');
-      blocks.push({ type: 'code', lang, code });
-      continue;
-    }
-
-    // Heading
-    if (isHeading(line)) {
-      const m = /^(#{1,6})\s+(.*)$/.exec(line);
-      const level = m[1].length;
-      const text = m[2].trim();
-      blocks.push({ type: 'heading', level, text });
-      i++;
-      continue;
-    }
-
-    // Mermaid replacement results in a single image line
-    if (isImageOnly(line)) {
-      const m = /^!\[[^\]]*\]\(([^)]+)\)\s*$/.exec(line.trim());
-      blocks.push({ type: 'image', src: m[1] });
-      i++;
-      continue;
-    }
-
-    // Display math: $$...$$ or fenced $$\n...\n$$
-    if (isDisplayMathSingleLine(line)) {
-      const trimmed = line.trim();
-      const inner = trimmed.slice(2, -2).trim();
-      blocks.push({ type: 'math', content: inner });
-      i++;
-      continue;
-    }
-
-    if (isDisplayMathFence(line)) {
-      i++;
-      const mathLines = [];
-      while (i < lines.length && !isDisplayMathFence(lines[i])) {
-        mathLines.push(lines[i]);
-        i++;
-      }
-      if (i < lines.length && isDisplayMathFence(lines[i])) i++;
-      blocks.push({ type: 'math', content: mathLines.join('\n') });
-      continue;
-    }
-
-    // Horizontal rule
-    if (isHorizontalRule(line)) {
-      blocks.push({ type: 'hr' });
-      i++;
-      continue;
-    }
-
-    // Unordered list
-    // List block (unordered or ordered, including nested items).
-    if (isUList(line) || isOList(line)) {
-      const items = [];
-
-      const parseIndent = (s) => {
-        const m = /^(\s*)/.exec(String(s) || '');
-        const raw = m?.[1] || '';
-        // Expand tabs conservatively.
-        return raw.replace(/\t/g, '    ').length;
-      };
-
-      while (i < lines.length && (isUList(lines[i]) || isOList(lines[i]))) {
-        const raw = lines[i];
-        const indent = parseIndent(raw);
-
-        const um = /^(\s*)[-*+]\s+(.*)$/.exec(raw);
-        if (um) {
-          items.push({ kind: 'u', indent, text: um[2] ?? '' });
+        const codeLines = [];
+        while (i < sourceLines.length && !sourceLines[i].startsWith('```')) {
+          codeLines.push(sourceLines[i]);
           i++;
-          continue;
+        }
+        if (i < sourceLines.length && sourceLines[i].startsWith('```')) i++;
+        const code = codeLines.join('\n');
+        blocks.push({ type: 'code', lang, code });
+        continue;
+      }
+
+      // Heading
+      if (isHeading(line)) {
+        const m = /^(#{1,6})\s+(.*)$/.exec(line);
+        const level = m[1].length;
+        const text = m[2].trim();
+        blocks.push({ type: 'heading', level, text });
+        i++;
+        continue;
+      }
+
+      // Blockquote (supports nesting via recursion)
+      if (isBlockquoteLine(line)) {
+        const quoteLines = [];
+        while (i < sourceLines.length) {
+          const l = sourceLines[i];
+          if (isBlockquoteLine(l)) {
+            quoteLines.push(l);
+            i++;
+            continue;
+          }
+
+          if (String(l).trim() === '') {
+            // Keep a blank line inside the quote if it separates quote lines.
+            if (i + 1 < sourceLines.length && isBlockquoteLine(sourceLines[i + 1])) {
+              quoteLines.push('');
+              i++;
+              continue;
+            }
+          }
+          break;
         }
 
-        const om = /^(\s*)\d+\.\s+(.*)$/.exec(raw);
-        if (om) {
-          items.push({ kind: 'o', indent, text: om[2] ?? '' });
+        const innerLines = quoteLines.map((l) => {
+          if (String(l).trim() === '') return '';
+          return String(l).replace(/^\s{0,3}>\s?/, '');
+        });
+        blocks.push({ type: 'blockquote', blocks: parseBlocksFromLines(innerLines) });
+        continue;
+      }
+
+      // Mermaid replacement results in a single image line
+      if (isImageOnly(line)) {
+        const m = /^!\[[^\]]*\]\(([^)]+)\)\s*$/.exec(line.trim());
+        blocks.push({ type: 'image', src: m[1] });
+        i++;
+        continue;
+      }
+
+      // Display math: $$...$$ or fenced $$\n...\n$$
+      if (isDisplayMathSingleLine(line)) {
+        const trimmed = line.trim();
+        const inner = trimmed.slice(2, -2).trim();
+        blocks.push({ type: 'math', content: inner });
+        i++;
+        continue;
+      }
+
+      if (isDisplayMathFence(line)) {
+        i++;
+        const mathLines = [];
+        while (i < sourceLines.length && !isDisplayMathFence(sourceLines[i])) {
+          mathLines.push(sourceLines[i]);
           i++;
-          continue;
+        }
+        if (i < sourceLines.length && isDisplayMathFence(sourceLines[i])) i++;
+        blocks.push({ type: 'math', content: mathLines.join('\n') });
+        continue;
+      }
+
+      // Horizontal rule
+      if (isHorizontalRule(line)) {
+        blocks.push({ type: 'hr' });
+        i++;
+        continue;
+      }
+
+      // List block (unordered or ordered, including nested items).
+      if (isUList(line) || isOList(line)) {
+        const items = [];
+
+        const parseIndent = (s) => {
+          const m = /^(\s*)/.exec(String(s) || '');
+          const raw = m?.[1] || '';
+          // Expand tabs conservatively.
+          return raw.replace(/\t/g, '    ').length;
+        };
+
+        while (i < sourceLines.length && (isUList(sourceLines[i]) || isOList(sourceLines[i]))) {
+          const raw = sourceLines[i];
+          const indent = parseIndent(raw);
+
+          const um = /^(\s*)[-*+]\s+(.*)$/.exec(raw);
+          if (um) {
+            items.push({ kind: 'u', indent, text: um[2] ?? '' });
+            i++;
+            continue;
+          }
+
+          const om = /^(\s*)\d+\.\s+(.*)$/.exec(raw);
+          if (om) {
+            items.push({ kind: 'o', indent, text: om[2] ?? '' });
+            i++;
+            continue;
+          }
+
+          // Should be unreachable due to guards, but avoid infinite loops.
+          break;
         }
 
-        // Should be unreachable due to guards, but avoid infinite loops.
-        break;
+        blocks.push({ type: 'list', items });
+        continue;
       }
 
-      blocks.push({ type: 'list', items });
-      continue;
-    }
+      // GFM pipe table
+      if (isTableRowLine(line) && isTableSeparatorLine(sourceLines[i + 1] || '')) {
+        const headerLine = line;
+        const separatorLine = sourceLines[i + 1];
+        i += 2;
 
-    // GFM pipe table
-    if (isTableRowLine(line) && isTableSeparatorLine(lines[i + 1] || '')) {
-      const headerLine = line;
-      const separatorLine = lines[i + 1];
-      i += 2;
+        const rowLines = [];
+        while (i < sourceLines.length && isTableRowLine(sourceLines[i])) {
+          rowLines.push(sourceLines[i]);
+          i++;
+        }
 
-      const rowLines = [];
-      while (i < lines.length && isTableRowLine(lines[i])) {
-        rowLines.push(lines[i]);
+        const headerCells = splitPipeRow(headerLine);
+        const bodyRows = rowLines.map((l) => splitPipeRow(l));
+        const columnCount = Math.max(
+          headerCells.length,
+          ...bodyRows.map((r) => r.length),
+        );
+
+        const align = parseAlignments(separatorLine, columnCount);
+        blocks.push({
+          type: 'table',
+          columnCount,
+          align,
+          header: headerCells,
+          rows: bodyRows,
+        });
+        continue;
+      }
+
+      // Paragraph
+      const para = [];
+      while (
+        i < sourceLines.length &&
+        sourceLines[i].trim() !== '' &&
+        !isFenceStart(sourceLines[i]) &&
+        !isHeading(sourceLines[i]) &&
+        !isBlockquoteLine(sourceLines[i]) &&
+        !isUList(sourceLines[i]) &&
+        !isOList(sourceLines[i]) &&
+        !isImageOnly(sourceLines[i]) &&
+        !(isTableRowLine(sourceLines[i]) && isTableSeparatorLine(sourceLines[i + 1] || ''))
+      ) {
+        para.push(sourceLines[i]);
         i++;
       }
-
-      const headerCells = splitPipeRow(headerLine);
-      const bodyRows = rowLines.map((l) => splitPipeRow(l));
-      const columnCount = Math.max(
-        headerCells.length,
-        ...bodyRows.map((r) => r.length),
-      );
-
-      const align = parseAlignments(separatorLine, columnCount);
-      blocks.push({
-        type: 'table',
-        columnCount,
-        align,
-        header: headerCells,
-        rows: bodyRows,
-      });
-      continue;
+      blocks.push({ type: 'p', text: para.join(' ') });
     }
 
-    // Paragraph
-    const para = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() !== '' &&
-      !isFenceStart(lines[i]) &&
-      !isHeading(lines[i]) &&
-      !isUList(lines[i]) &&
-      !isOList(lines[i]) &&
-      !isImageOnly(lines[i]) &&
-      !(isTableRowLine(lines[i]) && isTableSeparatorLine(lines[i + 1] || ''))
-    ) {
-      para.push(lines[i]);
-      i++;
-    }
-    blocks.push({ type: 'p', text: para.join(' ') });
-  }
+    return blocks;
+  };
+
+  const blocks = parseBlocksFromLines(lines);
 
   let typst = '';
 
@@ -596,6 +715,51 @@ export function markdownToTypstFallback(
 
     typst += typstPreludeFromMetadata(metadata);
   }
+
+  const footnoteDefsTypst = new Map();
+  if (footnotesEnabled && footnoteDefsRaw.size) {
+    for (const [id, defText] of footnoteDefsRaw.entries()) {
+      footnoteDefsTypst.set(id, markdownInlineToTypst(defText));
+    }
+  }
+
+  const injectFootnotes = (typstMarkup) => {
+    if (!footnotesEnabled) return typstMarkup;
+    let out = String(typstMarkup);
+
+    // Inline footnotes: ^[text]
+    const inlineFootnote = (_m, inner) => {
+      const rendered = markdownInlineToTypst(String(inner));
+      return `#footnote[${rendered}]`;
+    };
+    out = out.replace(/\^\[([^\]]+?)\]/g, inlineFootnote);
+    // The fallback renderer escapes literal brackets as `\[` and `\]`.
+    out = out.replace(/\^\\\[([\s\S]*?)\\\]/g, inlineFootnote);
+    out = out.replace(/\\\^\\\[([\s\S]*?)\\\]/g, inlineFootnote);
+
+    // Named footnotes: [^id]
+    if (footnoteDefsTypst.size) {
+      const namedFootnote = (full, rawId) => {
+        const id = String(rawId).trim();
+        const def = footnoteDefsTypst.get(id);
+        if (!def) return full;
+        if (hasReferencesSection) {
+          // Citation mode: show literal bracketed key.
+          return `\\[${markdownInlineToTypst(id)}\\]`;
+        }
+        return `#footnote[${def}]`;
+      };
+
+      // Raw brackets
+      out = out.replace(/\[\^([^\]]+)\]/g, namedFootnote);
+      // Escaped brackets produced by the fallback renderer
+      out = out.replace(/\\\[\^([^\\\]]+)\\\]/g, namedFootnote);
+    }
+
+    return out;
+  };
+
+  const inline = (text) => injectFootnotes(markdownInlineToTypst(text));
   if (extraPreamble && String(extraPreamble).trim()) {
     typst += `${String(extraPreamble).trim()}\n\n`;
   }
@@ -612,60 +776,69 @@ export function markdownToTypstFallback(
     }
   }
 
-  for (const b of blocks) {
-    if (b.type === 'heading') {
-      typst += `${'='.repeat(b.level)} ${markdownInlineToTypst(b.text)}\n\n`;
-    } else if (b.type === 'p') {
-      typst += `${markdownInlineToTypst(b.text)}\n\n`;
-    } else if (b.type === 'code') {
-      const lang = b.lang ? `, lang: "${escapeTypstString(b.lang)}"` : '';
-      typst += `#raw("${escapeTypstString(b.code)}"${lang})\n\n`;
-    } else if (b.type === 'list') {
-      const items = Array.isArray(b.items) ? b.items : [];
-      for (const it of items) {
-        const indent = Number.isFinite(it?.indent) ? Math.max(0, it.indent) : 0;
-        const bullet = it?.kind === 'o' ? '+' : '-';
-        typst += `${' '.repeat(indent)}${bullet} ${markdownInlineToTypst(it?.text ?? '')}\n`;
-      }
-      typst += `\n`;
-    } else if (b.type === 'image') {
-      const resolved = resolveLocalAsset(b.src, documentUrl);
-      const srcForTypst = resolved?.shadowPath || (b.src.startsWith('/') ? b.src : `/${b.src}`);
-      typst += `#image("${escapeTypstString(srcForTypst)}")\n\n`;
-    } else if (b.type === 'math') {
-      const raw = `$$\n${b.content}\n$$`;
-      typst += `#raw("${escapeTypstString(raw)}")\n\n`;
-    } else if (b.type === 'hr') {
-      typst += `#line(length: 100%)\n\n`;
-    } else if (b.type === 'table') {
-      const cols = Number(b.columnCount) || 1;
-      const align = Array.isArray(b.align) ? b.align : [];
-      const alignList = Array.from({ length: cols }, (_v, idx) => align[idx] || 'left');
-
-      const cells = [];
-      const header = Array.isArray(b.header) ? b.header : [];
-      for (let c = 0; c < cols; c++) {
-        const raw = header[c] ?? '';
-        const content = markdownInlineToTypst(String(raw));
-        cells.push(`[*${content}*]`);
-      }
-
-      const rows = Array.isArray(b.rows) ? b.rows : [];
-      for (const r of rows) {
-        for (let c = 0; c < cols; c++) {
-          const raw = r?.[c] ?? '';
-          const content = markdownInlineToTypst(String(raw));
-          cells.push(content ? `[${content}]` : `[]`);
+  const renderBlocksToTypst = (blockList) => {
+    let out = '';
+    for (const b of blockList) {
+      if (b.type === 'heading') {
+        out += `${'='.repeat(b.level)} ${inline(b.text)}\n\n`;
+      } else if (b.type === 'p') {
+        out += `${inline(b.text)}\n\n`;
+      } else if (b.type === 'blockquote') {
+        const inner = renderBlocksToTypst(Array.isArray(b.blocks) ? b.blocks : []).trimEnd();
+        out += `#quote[\n${inner}\n]\n\n`;
+      } else if (b.type === 'code') {
+        const lang = b.lang ? `, lang: "${escapeTypstString(b.lang)}"` : '';
+        out += `#raw("${escapeTypstString(b.code)}"${lang})\n\n`;
+      } else if (b.type === 'list') {
+        const items = Array.isArray(b.items) ? b.items : [];
+        for (const it of items) {
+          const indent = Number.isFinite(it?.indent) ? Math.max(0, it.indent) : 0;
+          const bullet = it?.kind === 'o' ? '+' : '-';
+          out += `${' '.repeat(indent)}${bullet} ${inline(it?.text ?? '')}\n`;
         }
-      }
+        out += `\n`;
+      } else if (b.type === 'image') {
+        const resolved = resolveLocalAsset(b.src, documentUrl);
+        const srcForTypst = resolved?.shadowPath || (b.src.startsWith('/') ? b.src : `/${b.src}`);
+        out += `#image("${escapeTypstString(srcForTypst)}")\n\n`;
+      } else if (b.type === 'math') {
+        const raw = `$$\n${b.content}\n$$`;
+        out += `#raw("${escapeTypstString(raw)}")\n\n`;
+      } else if (b.type === 'hr') {
+        out += `#line(length: 100%)\n\n`;
+      } else if (b.type === 'table') {
+        const cols = Number(b.columnCount) || 1;
+        const align = Array.isArray(b.align) ? b.align : [];
+        const alignList = Array.from({ length: cols }, (_v, idx) => align[idx] || 'left');
 
-      typst += `#table(\n`;
-      typst += `  columns: (1fr,) * ${cols},\n`;
-      typst += `  align: (${alignList.join(', ')}),\n`;
-      typst += `  ${cells.join(',\n  ')}\n`;
-      typst += `)\n\n`;
+        const cells = [];
+        const header = Array.isArray(b.header) ? b.header : [];
+        for (let c = 0; c < cols; c++) {
+          const raw = header[c] ?? '';
+          const content = inline(String(raw));
+          cells.push(`[*${content}*]`);
+        }
+
+        const rows = Array.isArray(b.rows) ? b.rows : [];
+        for (const r of rows) {
+          for (let c = 0; c < cols; c++) {
+            const raw = r?.[c] ?? '';
+            const content = inline(String(raw));
+            cells.push(content ? `[${content}]` : `[]`);
+          }
+        }
+
+        out += `#table(\n`;
+        out += `  columns: (1fr,) * ${cols},\n`;
+        out += `  align: (${alignList.join(', ')}),\n`;
+        out += `  ${cells.join(',\n  ')}\n`;
+        out += `)\n\n`;
+      }
     }
-  }
+    return out;
+  };
+
+  typst += renderBlocksToTypst(blocks);
 
   return typst;
 }

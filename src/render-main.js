@@ -168,6 +168,13 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             ...(sidecar?.metadata || {}),
         };
 
+        // Optional URL override for footnotes parsing in fallback renderer.
+        // - `footnotes=0` disables converting `[^id]` into Typst footnotes.
+        const footnotesParam = urlParams.get('footnotes');
+        if (footnotesParam === '0') {
+            metadata.footnotes = false;
+        }
+
         updateStatus('Preparing Mermaid diagrams...');
         markTiming('mermaid:start');
         const { transformedMarkdown, svgAssets } = await renderMermaidBlocksToSvgAssets(sanitizedContent, {
@@ -242,11 +249,20 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         const rendererParam = urlParams.get('renderer');
         const rendererMode = rendererParam || 'auto';
 
+        // If footnotes/citations are present, prefer the fallback renderer (auto mode).
+        // The cmarker Typst package doesn't implement GFM footnotes.
+        const footnotesEnabled = metadata?.footnotes !== false && metadata?.notes !== false;
+        const hasFootnoteSyntax =
+            footnotesEnabled && /\^\[[\s\S]*?\]|\[\^[^\]]+\]/.test(String(markdownForTypst));
+
         // Heuristic: remote markdown often can't use @preview package imports on GH Pages.
         // Default to the fallback renderer for remote sources to avoid a slow failed attempt.
         let useFallback = rendererMode === 'fallback';
         if (rendererMode === 'cmarker') {
             useFallback = false;
+        }
+        if (!useFallback && rendererMode === 'auto' && hasFootnoteSyntax) {
+            useFallback = true;
         }
         if (!useFallback && rendererMode === 'auto') {
             try {
@@ -265,6 +281,7 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             useFallback,
             cmarkerAvailable,
             rendererMode,
+            hasFootnoteSyntax,
             remoteDoc: (() => {
                 try {
                     const docOrigin = documentUrl ? new URL(documentUrl, window.location.href).origin : null;

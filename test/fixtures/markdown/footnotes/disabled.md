@@ -1,3 +1,7 @@
+---
+footnotes: false
+---
+
 # No Footnotes
 
 This text has a footnote marker[^1] but footnotes are disabled.
