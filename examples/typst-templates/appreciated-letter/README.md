@@ -1,33 +1,14 @@
 ---
-title: "Letter"
-author: "Alex Example"
-date: "2026-01-10"
-paper: us-letter
-margin: 1in
+sender: "Jane Smith, Universal Exports, 1 Heavy Plaza, Morristown, NJ 07964"
+recipient: "Mr. John Doe\\nAcme Corp.\\n123 Glennwood Ave\\nQuarto Creek, VA 22438"
+date: "Morristown, June 9th, 2023"
+subject: "Revision of our Producrement Contract"
+name: "Jane Smith\\nRegional Director"
 ---
 
-# Alex Example
+Dear Joe,
 
-123 Example Street  
-Example City, EX 12345  
-alex@example.com
+Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
 
-2026-01-10
+Best,
 
-## Re: Application for Research Internship
-
-Dear Hiring Committee,
-
-I’m writing to express my interest in the Research Internship. I enjoy building reliable document pipelines and developer tooling.
-
-In prior work, I:
-
-- Designed a browser-based rendering system that converts Markdown into PDF.
-- Built a fixture-based test suite to validate layout and assets.
-- Focused on performance and deterministic outputs.
-
-Thank you for your time and consideration.
-
-Sincerely,
-
-Alex Example

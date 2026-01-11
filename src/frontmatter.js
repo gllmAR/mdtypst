@@ -29,7 +29,37 @@ export function parseFrontmatter(content) {
     else metadata[key] = raw;
   });
 
+  // Derive a title from the first Markdown H1 when no explicit title is given.
+  // This is useful for sidecar templates (mdtypst.title) while keeping the
+  // default "metadata prelude" behavior unchanged (we don't set metadata.title).
+  const titleFromHeading =
+    metadata.title_from_heading === false || metadata.titleFromHeading === false
+      ? null
+      : deriveTitleFromFirstH1(markdownContent);
+  if (metadata.title == null && titleFromHeading) {
+    metadata.__mdtypst_titleFromHeading = titleFromHeading;
+  }
+
   return { metadata, content: markdownContent };
+}
+
+function deriveTitleFromFirstH1(markdown) {
+  const lines = String(markdown || '').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // ATX H1: "# Title" (but not "##")
+    const m = trimmed.match(/^#(?!#)\s+(.+?)\s*$/);
+    if (!m) continue;
+
+    let title = m[1] ?? '';
+    // Strip optional closing hashes: "# Title ###"
+    title = title.replace(/\s+#+\s*$/, '').trim();
+    if (!title) return null;
+    return title;
+  }
+  return null;
 }
 
 export function isTypstLength(value) {

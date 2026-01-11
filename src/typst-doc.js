@@ -29,14 +29,28 @@ function typstLiteral(value, { allowRaw = false } = {}) {
 }
 
 export function typstMdtypstContextFromMetadata(metadata) {
+  const mdtypstTitle = metadata?.title ?? metadata?.__mdtypst_titleFromHeading;
   const margin = metadata?.margin;
   const marginX = metadata?.margin_x ?? metadata?.marginX;
   const marginY = metadata?.margin_y ?? metadata?.marginY;
   const fontSize = metadata?.font_size ?? metadata?.fontSize;
 
+  const meta = metadata && typeof metadata === 'object' ? metadata : {};
+  const metaEntries = Object.entries(meta)
+    .filter(([k]) => !String(k).startsWith('__mdtypst_'))
+    .filter(([, v]) => v == null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')
+    .sort(([a], [b]) => String(a).localeCompare(String(b)));
+
+  const metaLines = metaEntries.map(([key, value]) => {
+    const k = String(key);
+    const isIdent = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(k);
+    const typstKey = isIdent ? k : `"${escapeTypstString(k)}"`;
+    return `    ${typstKey}: ${typstLiteral(value)},`;
+  });
+
   const lines = [];
   lines.push(`#let mdtypst = (`);
-  lines.push(`  title: ${typstLiteral(metadata?.title)},`);
+  lines.push(`  title: ${typstLiteral(mdtypstTitle)},`);
   lines.push(`  author: ${typstLiteral(metadata?.author)},`);
   lines.push(`  date: ${typstLiteral(metadata?.date)},`);
   lines.push(`  toc: ${typstLiteral(metadata?.toc)},`);
@@ -47,6 +61,11 @@ export function typstMdtypstContextFromMetadata(metadata) {
   lines.push(`  font: ${typstLiteral(metadata?.font)},`);
   lines.push(`  font_size: ${typstLiteral(fontSize, { allowRaw: true })},`);
   lines.push(`  justify: ${typstLiteral(metadata?.justify)},`);
+  lines.push(`  meta: (`);
+  if (metaLines.length) {
+    lines.push(...metaLines);
+  }
+  lines.push(`  ),`);
   lines.push(`)`);
   return `${lines.join('\n')}\n`;
 }
@@ -85,6 +104,23 @@ export function markdownToTypstWithCmarker(
   }
 
   typst += typstMdtypstContextFromMetadata(metadata);
+
+  // Shared helpers for sidecar templates.
+  // Keep this tiny: it should be low-overhead but remove repetition.
+  typst += `#let mdtypst_meta(key, default: none) = mdtypst.meta.at(key, default: default)\n`;
+  typst += `#let mdtypst_text_or_none(v) = if v == none { none } else { text(v) }\n`;
+  typst += `#let mdtypst_decode_escaped_newlines(s) = if s == none { none } else { s.replace("\\\\n", "\\n") }\n`;
+  typst += `#let mdtypst_block_from_escaped_newlines(s) = {\n`;
+  typst += `  if s == none { none } else {\n`;
+  typst += `    let parts = mdtypst_decode_escaped_newlines(s).split("\\n")\n`;
+  typst += `    let out = ()\n`;
+  typst += `    for i in range(parts.len()) {\n`;
+  typst += `      out.push(text(parts.at(i)))\n`;
+  typst += `      if i < parts.len() - 1 { out.push(linebreak()) }\n`;
+  typst += `    }\n`;
+  typst += `    out.join()\n`;
+  typst += `  }\n`;
+  typst += `}\n\n`;
 
   if (includeMetadataPrelude) {
     if (metadata.title) {
@@ -302,8 +338,10 @@ export function markdownToTypstFallback(
 
   const isFenceStart = (line) => line.startsWith('```');
   const isHeading = (line) => /^#{1,6}\s+/.test(line);
-  const isUList = (line) => /^\s{0,3}[-*+]\s+/.test(line);
-  const isOList = (line) => /^\s{0,3}\d+\.\s+/.test(line);
+  // Lists: allow arbitrary indentation so nested lists don't get swallowed
+  // into a paragraph (common in fixtures like lists/deep-nesting.md).
+  const isUList = (line) => /^\s*[-*+]\s+/.test(line);
+  const isOList = (line) => /^\s*\d+\.\s+/.test(line);
   const isImageOnly = (line) => /^!\[[^\]]*\]\([^)]+\)\s*$/.test(line.trim());
   const isHorizontalRule = (line) => /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line);
   const isDisplayMathFence = (line) => /^\s*\$\$\s*$/.test(line);
@@ -442,24 +480,40 @@ export function markdownToTypstFallback(
     }
 
     // Unordered list
-    if (isUList(line)) {
+    // List block (unordered or ordered, including nested items).
+    if (isUList(line) || isOList(line)) {
       const items = [];
-      while (i < lines.length && isUList(lines[i])) {
-        items.push(lines[i].replace(/^\s{0,3}[-*+]\s+/, ''));
-        i++;
-      }
-      blocks.push({ type: 'ulist', items });
-      continue;
-    }
 
-    // Ordered list
-    if (isOList(line)) {
-      const items = [];
-      while (i < lines.length && isOList(lines[i])) {
-        items.push(lines[i].replace(/^\s{0,3}\d+\.\s+/, ''));
-        i++;
+      const parseIndent = (s) => {
+        const m = /^(\s*)/.exec(String(s) || '');
+        const raw = m?.[1] || '';
+        // Expand tabs conservatively.
+        return raw.replace(/\t/g, '    ').length;
+      };
+
+      while (i < lines.length && (isUList(lines[i]) || isOList(lines[i]))) {
+        const raw = lines[i];
+        const indent = parseIndent(raw);
+
+        const um = /^(\s*)[-*+]\s+(.*)$/.exec(raw);
+        if (um) {
+          items.push({ kind: 'u', indent, text: um[2] ?? '' });
+          i++;
+          continue;
+        }
+
+        const om = /^(\s*)\d+\.\s+(.*)$/.exec(raw);
+        if (om) {
+          items.push({ kind: 'o', indent, text: om[2] ?? '' });
+          i++;
+          continue;
+        }
+
+        // Should be unreachable due to guards, but avoid infinite loops.
+        break;
       }
-      blocks.push({ type: 'olist', items });
+
+      blocks.push({ type: 'list', items });
       continue;
     }
 
@@ -515,6 +569,23 @@ export function markdownToTypstFallback(
 
   typst += typstMdtypstContextFromMetadata(metadata);
 
+  // Shared helpers for sidecar templates.
+  // Keep this tiny: it should be low-overhead but remove repetition.
+  typst += `#let mdtypst_meta(key, default: none) = mdtypst.meta.at(key, default: default)\n`;
+  typst += `#let mdtypst_text_or_none(v) = if v == none { none } else { text(v) }\n`;
+  typst += `#let mdtypst_decode_escaped_newlines(s) = if s == none { none } else { s.replace("\\\\n", "\\n") }\n`;
+  typst += `#let mdtypst_block_from_escaped_newlines(s) = {\n`;
+  typst += `  if s == none { none } else {\n`;
+  typst += `    let parts = mdtypst_decode_escaped_newlines(s).split("\\n")\n`;
+  typst += `    let out = ()\n`;
+  typst += `    for i in range(parts.len()) {\n`;
+  typst += `      out.push(text(parts.at(i)))\n`;
+  typst += `      if i < parts.len() - 1 { out.push(linebreak()) }\n`;
+  typst += `    }\n`;
+  typst += `    out.join()\n`;
+  typst += `  }\n`;
+  typst += `}\n\n`;
+
   if (includeMetadataPrelude) {
     if (metadata.title) {
       typst += `#set document(title: "${escapeTypstString(metadata.title)}")\n`;
@@ -549,14 +620,12 @@ export function markdownToTypstFallback(
     } else if (b.type === 'code') {
       const lang = b.lang ? `, lang: "${escapeTypstString(b.lang)}"` : '';
       typst += `#raw("${escapeTypstString(b.code)}"${lang})\n\n`;
-    } else if (b.type === 'ulist') {
-      for (const item of b.items) {
-        typst += `- ${markdownInlineToTypst(item)}\n`;
-      }
-      typst += `\n`;
-    } else if (b.type === 'olist') {
-      for (const item of b.items) {
-        typst += `+ ${markdownInlineToTypst(item)}\n`;
+    } else if (b.type === 'list') {
+      const items = Array.isArray(b.items) ? b.items : [];
+      for (const it of items) {
+        const indent = Number.isFinite(it?.indent) ? Math.max(0, it.indent) : 0;
+        const bullet = it?.kind === 'o' ? '+' : '-';
+        typst += `${' '.repeat(indent)}${bullet} ${markdownInlineToTypst(it?.text ?? '')}\n`;
       }
       typst += `\n`;
     } else if (b.type === 'image') {

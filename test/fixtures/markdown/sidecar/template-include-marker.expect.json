@@ -1,6 +1,5 @@
 {
   "mustContainTypst": [
-    "#include \"/mdtypst/template.typ\"",
     "Template include marker"
   ],
   "mustContainSidecarUrl": [

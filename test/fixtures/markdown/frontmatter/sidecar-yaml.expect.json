@@ -1,6 +1,6 @@
 {
   "mustContainTypst": [
-    "#include \"/mdtypst/template.typ\"",
+    "#let yaml_template_marker = \"ok\"",
     "sidecar yaml"
   ],
   "mustContainSidecarUrl": [

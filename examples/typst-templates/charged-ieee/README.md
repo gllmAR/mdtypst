@@ -6,10 +6,6 @@ paper: us-letter
 margin: 0.85in
 ---
 
-# A Compact Article in Markdown
-
-*Casey Example — 2026-01-10*
-
 ## Abstract
 
 This short article exercises a dense, two-column layout in the Typst sidecar while keeping the content in Markdown.

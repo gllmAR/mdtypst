@@ -11,7 +11,7 @@ import {
 import { createLogger, createTimings } from './logging.js';
 import { renderMermaidBlocksToSvgAssets } from './mermaid.js';
 import { mountAndRewriteImages } from './assets.js';
-import { markdownToTypstFallback, markdownToTypstWithCmarker, typstMdtypstContextFromMetadata } from './typst-doc.js';
+import { markdownToTypstFallback, markdownToTypstWithCmarker } from './typst-doc.js';
 import { loadSidecar } from './sidecar.js';
 
 // Flag used by the root entrypoint (`render.js`) and the fixture harness to
@@ -194,18 +194,11 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         const encoder = new TextEncoder();
 
         // Optional Typst styling template (sidecar-controlled).
-        // Sidecars are native Typst templates; we mount them into shadow FS and include them.
+        // Sidecars are native Typst snippets. We inline them into the generated Typst preamble
+        // so they run in the same scope as the injected `mdtypst` metadata dictionary.
         const templateText = sidecar?.typst?.templateText;
         const hasTemplate = Boolean(templateText && String(templateText).trim());
         lastTemplateUrl = hasTemplate ? sidecar?.url || null : null;
-        if (hasTemplate && typeof $typst.mapShadow === 'function') {
-            // Typst evaluates #include/#import targets in an isolated scope.
-            // To let templates access the mdtypst metadata dictionary, inject it at the top.
-            const contextPrelude = typstMdtypstContextFromMetadata(metadata);
-            const mountedTemplate = `${contextPrelude}\n${String(templateText)}`;
-            await $typst.mapShadow('/mdtypst/template.typ', encoder.encode(mountedTemplate));
-        }
-
         const nativeTemplateMode = hasTemplate;
 
         // Mount mermaid SVG assets so Typst can `image("/assets/...")`
@@ -242,9 +235,9 @@ async function compileToPDF(markdownContent, documentUrl = null) {
 
         const extraPreambleParts = [];
         if (hasTemplate) {
-            extraPreambleParts.push('#include "/mdtypst/template.typ"');
+            extraPreambleParts.push(String(templateText).trim());
         }
-        const extraPreamble = extraPreambleParts.length ? `${extraPreambleParts.join('\n')}\n` : '';
+        const extraPreamble = extraPreambleParts.length ? `${extraPreambleParts.join('\n\n')}\n\n` : '';
 
         const rendererParam = urlParams.get('renderer');
         const rendererMode = rendererParam || 'auto';

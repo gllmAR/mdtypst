@@ -1,10 +1,11 @@
 // Small book layout (inspired by typst/templates wonderous-book)
+#let title = if mdtypst.title != none { mdtypst.title } else { "Book" }
+
 #set page(
-  paper: "a5",
-  margin: 1.6cm,
-  footer: context [
-    #align(center)[#counter(page).display("1")]
-  ],
+  paper: if mdtypst.paper != none { mdtypst.paper } else { "a5" },
+  margin: if mdtypst.margin != none { mdtypst.margin } else { 1.6cm },
+  header: context [#align(center)[#text(size: 9pt)[#title]]],
+  footer: context [#align(center)[#counter(page).display("1")]],
 )
 
 #set par(justify: true, leading: 1.2em)

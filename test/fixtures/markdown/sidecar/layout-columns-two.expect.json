@@ -1,6 +1,6 @@
 {
   "mustContainTypst": [
-    "#include \"/mdtypst/template.typ\"",
+    "#set page(columns: 2)",
     "Two column layout"
   ],
   "mustContainSidecarUrl": [

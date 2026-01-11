@@ -1,6 +1,6 @@
 {
   "mustContainTypst": [
-    "#include \"/mdtypst/template.typ\"",
+    "#set page(paper: \"us-letter\")",
     "Native .typ sidecar"
   ]
 }

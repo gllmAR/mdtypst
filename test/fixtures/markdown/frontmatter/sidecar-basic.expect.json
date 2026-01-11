@@ -1,6 +1,6 @@
 {
   "mustContainTypst": [
-    "#include \"/mdtypst/template.typ\"",
+    "#set page(paper: \"a5\", margin: 1cm)",
     "Sidecar basic"
   ],
   "mustContainSidecarUrl": [
