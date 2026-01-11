@@ -96,6 +96,8 @@ By default the renderer loads Typst + Mermaid from a CDN. To run without network
 
 The app will prefer `./vendor/typst/` and `./vendor/mermaid/` first, and only fall back to CDN if the local files are missing.
 
+`offline:prepare` also vendors Typst preview packages (used by `@preview/cmarker`, `@preview/tablem`, `@preview/mitex`) into `./vendor/typst-packages/`. When present, mdtypst will resolve preview imports from there instead of `https://packages.typst.org`.
+
 ## GitHub Pages
 
 `npm run build:pages` writes a static site into `dist/` (including `vendor/` and `src/`).

@@ -38,6 +38,11 @@ const urlParams = new URLSearchParams(window.location.search);
 // Debug logging is enabled by default; disable with ?debug=0.
 const debugEnabled = urlParams.get('debug') !== '0';
 
+// Lightweight trace for observing rendering decisions.
+// Enable with ?trace=1 (logs + window.__mdtypst_trace).
+const traceEnabled = urlParams.get('trace') === '1';
+globalThis.__mdtypst_trace = globalThis.__mdtypst_trace || { runs: [], last: null };
+
 // If enabled, we never retry with the fallback renderer.
 const noFallback = urlParams.get('noFallback') === '1';
 
@@ -51,12 +56,37 @@ function updateStatus(message, type = 'info') {
     statusEl.className = type;
 }
 
-async function ensureTypstPackageRegistry($typst) {
+async function ensureTypstPackageRegistry($typst, { extraFontUrls = [] } = {}) {
     // Ensure Typst can resolve @preview/... imports in the browser.
     // Must run before the compiler is initialized.
     try {
         const TypstSnippet = globalThis.TypstSnippet;
-        if (!TypstSnippet || typeof $typst?.use !== 'function') return;
+        if (!TypstSnippet || typeof $typst?.use !== 'function') return { mode: 'none' };
+
+        const pullBinarySync = (httpUrl) => {
+            const request = new XMLHttpRequest();
+            try {
+                request.overrideMimeType('text/plain; charset=x-user-defined');
+                request.open('GET', httpUrl, false);
+                request.send(null);
+            } catch {
+                return undefined;
+            }
+            if (request.status !== 200) return undefined;
+            if (!(request.response instanceof String) && typeof request.response !== 'string') return undefined;
+            return Uint8Array.from(request.response, (ch) => ch.charCodeAt(0));
+        };
+
+        const packageBaseParam = urlParams.get('packageBase') || urlParams.get('pkgBase') || '';
+        const requestedPackageBase = String(packageBaseParam || globalThis.__mdtypst_package_base__ || '').trim();
+        const defaultPackageBase = new URL('vendor/typst-packages/', window.location.href).toString();
+        const detectLocalMirrorUrl = new URL('preview/cmarker-0.1.8.tar.gz', defaultPackageBase).toString();
+
+        const resolvedPackageBase = requestedPackageBase
+            ? new URL(requestedPackageBase, window.location.href).toString()
+            : (pullBinarySync(detectLocalMirrorUrl) ? defaultPackageBase : '');
+
+        let registryInfo = { mode: 'remote', base: null };
 
         // Ensure a predictable set of fonts is available.
         // The Typst runtime defaults to `defaultAssets = ["text"]`, which does NOT
@@ -71,24 +101,56 @@ async function ensureTypstPackageRegistry($typst) {
 
             const srcParam = urlParams.get('src') || '';
             const isFixtureDoc = srcParam.startsWith('test/fixtures/') || srcParam.includes('/test/fixtures/');
-            const extraFontUrls = [];
+            const fontUrlsToLoad = [];
 
             if (isFixtureDoc) {
                 const interRegular = new URL('test/fixtures/fonts/Inter-Regular.ttf', window.location.href).toString();
                 const interBold = new URL('test/fixtures/fonts/Inter-Bold.ttf', window.location.href).toString();
-                extraFontUrls.push(interRegular, interBold);
+                fontUrlsToLoad.push(interRegular, interBold);
             }
 
-            $typst.use(TypstSnippet.loadFonts(extraFontUrls, { assets: ['text', 'cjk'] }));
+            if (Array.isArray(extraFontUrls)) {
+                for (const u of extraFontUrls) {
+                    const s = String(u || '').trim();
+                    if (s) fontUrlsToLoad.push(s);
+                }
+            }
+
+            // Dedupe while preserving order.
+            const seen = new Set();
+            const combined = [];
+            for (const u of fontUrlsToLoad) {
+                if (seen.has(u)) continue;
+                seen.add(u);
+                combined.push(u);
+            }
+
+            $typst.use(TypstSnippet.loadFonts(combined, { assets: ['text', 'cjk'] }));
         }
 
-        $typst.use(TypstSnippet.fetchPackageRegistry());
+        if (resolvedPackageBase) {
+            const accessModel = new TypstSnippet.MemoryAccessModel();
+            $typst.use(
+                TypstSnippet.withAccessModel(accessModel),
+                TypstSnippet.fetchPackageBy(accessModel, (pkg) => {
+                    const url = new URL(`preview/${pkg.name}-${pkg.version}.tar.gz`, resolvedPackageBase).toString();
+                    return pullBinarySync(url);
+                }),
+            );
+            registryInfo = { mode: 'local-mirror', base: resolvedPackageBase };
+        } else {
+            $typst.use(TypstSnippet.fetchPackageRegistry());
+            registryInfo = { mode: 'remote', base: null };
+        }
         if (typeof $typst.prepareUse === 'function') {
             await $typst.prepareUse();
         }
+        debugLog('packages: registry', registryInfo);
+        return registryInfo;
     } catch (e) {
         console.warn('Typst package registry setup failed; will use fallback renderer if needed.', e);
         cmarkerAvailable = false;
+        return { mode: 'error', error: String(e?.message || e) };
     }
 }
 
@@ -178,6 +240,17 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         debugLog('compileToPDF: start', { documentUrl });
         updateStatus('Parsing frontmatter...');
 
+        const traceRun = {
+            startedAt: new Date().toISOString(),
+            src: documentUrl,
+            rendererRequested: urlParams.get('renderer') || 'auto',
+            rendererSelected: null,
+            rendererFinal: null,
+            packageRegistry: null,
+            retries: [],
+        };
+        globalThis.__mdtypst_trace.last = traceRun;
+
         const { metadata: fmMetadata, content } = parseFrontmatter(markdownContent);
         const sanitizedContent = closeUnclosedBacktickFence(content);
 
@@ -207,6 +280,27 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             metadata.math = false;
         }
 
+        const docFontUrlsRaw =
+            (typeof metadata.fontUrls === 'string' ? metadata.fontUrls : null) ??
+            (typeof metadata.font_urls === 'string' ? metadata.font_urls : null) ??
+            (typeof metadata.fontUrl === 'string' ? metadata.fontUrl : null) ??
+            (typeof metadata.font_url === 'string' ? metadata.font_url : null);
+
+        const docFontUrls = docFontUrlsRaw && String(docFontUrlsRaw).trim()
+            ? String(docFontUrlsRaw)
+                .split(/[\s,]+/g)
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .map((u) => {
+                    try {
+                        return new URL(u, window.location.href).toString();
+                    } catch {
+                        return null;
+                    }
+                })
+                .filter(Boolean)
+            : [];
+
         updateStatus('Preparing Mermaid diagrams...');
         markTiming('mermaid:start');
         const { transformedMarkdown, svgAssets } = await renderMermaidBlocksToSvgAssets(sanitizedContent, {
@@ -231,7 +325,8 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         debugLog('typst: ready');
 
         // Configure package registry before the compiler initializes.
-        await ensureTypstPackageRegistry($typst);
+        traceRun.packageRegistry = await ensureTypstPackageRegistry($typst, { extraFontUrls: docFontUrls });
+        globalThis.__mdtypst_trace.last = traceRun;
 
         // Ensure a clean slate across renders
         if (typeof $typst.resetShadow === 'function') {
@@ -280,6 +375,9 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         };
 
         let markdownForTypst = await buildMarkdownForTypstFrom(markdownWithEmojiImages, { jpegMode: userJpegMode });
+
+        // Note: per-document fonts are loaded in ensureTypstPackageRegistry
+        // before the compiler initializes.
 
         debugLog('images: mounted', {
             total: timings.counters.imagesTotal ?? 0,
@@ -336,6 +434,19 @@ async function compileToPDF(markdownContent, documentUrl = null) {
 
         if (!useFallback && !cmarkerAvailable && !noFallback) useFallback = true;
 
+        traceRun.rendererSelected = useFallback ? 'fallback' : 'cmarker';
+        traceRun.rendererFinal = traceRun.rendererSelected;
+        globalThis.__mdtypst_trace.last = traceRun;
+        if (traceEnabled) {
+            console.info('[mdtypst trace] selected', {
+                renderer: traceRun.rendererSelected,
+                packageRegistry: traceRun.packageRegistry,
+                cmarkerAvailable,
+                hasFootnoteSyntax,
+                hasMathSyntax,
+            });
+        }
+
         debugLog('renderer: selected', {
             useFallback,
             cmarkerAvailable,
@@ -352,7 +463,11 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             })(),
         });
 
-        updateStatus('Converting Markdown to Typst...');
+        updateStatus(
+            traceEnabled
+                ? `Converting Markdown to Typst... (renderer: ${traceRun.rendererSelected})`
+                : 'Converting Markdown to Typst...'
+        );
         markTiming('typst:convert:start');
         let typstContent;
         if (useFallback) {
@@ -410,6 +525,8 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             const hadJpeg = Boolean((timings?.counters?.imagesJpegCount ?? 0) > 0);
             const alreadyTranscoding = userJpegMode === 'transcode' || (timings?.counters?.imagesJpegTranscoded ?? 0) > 0;
             if (hadJpeg && !alreadyTranscoding) {
+                traceRun.retries.push({ kind: 'jpeg-transcode' });
+                globalThis.__mdtypst_trace.last = traceRun;
                 updateStatus('Retrying with JPEG transcoding...');
                 try {
                     markdownForTypst = await buildMarkdownForTypstFrom(markdownWithEmojiImages, { jpegMode: 'transcode' });
@@ -465,6 +582,8 @@ async function compileToPDF(markdownContent, documentUrl = null) {
                 try {
                     const msg = String(err?.message ?? err).toLowerCase();
                     if (msg.includes('unresolved import') && (msg.includes('mitex') || msg.includes('@preview/mitex'))) {
+                        traceRun.retries.push({ kind: 'math-disabled' });
+                        globalThis.__mdtypst_trace.last = traceRun;
                         updateStatus('Retrying with math disabled...');
                         const metadataNoMath = { ...(metadata || {}), math: false };
                         markTiming('typst:convert:start');
@@ -501,6 +620,10 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             } catch {
                 // ignore
             }
+
+            traceRun.retries.push({ kind: 'fallback-renderer' });
+            traceRun.rendererFinal = 'fallback';
+            globalThis.__mdtypst_trace.last = traceRun;
 
             updateStatus('Retrying with fallback renderer...');
             typstContent = markdownToTypstFallback(markdownForTypst, metadata, documentUrl, {
@@ -552,7 +675,22 @@ function displayPDF(pdfData) {
         pdfContainer.style.display = 'block';
         
         markTiming('pdf:displayed');
-        updateStatus('PDF rendered successfully!', 'success');
+        try {
+            const last = globalThis.__mdtypst_trace?.last;
+            if (traceEnabled && last) {
+                console.info('[mdtypst trace] done', last);
+                globalThis.__mdtypst_trace.runs.push(last);
+            }
+            const renderer = last?.rendererFinal || last?.rendererSelected;
+            updateStatus(
+                traceEnabled && renderer
+                    ? `PDF rendered successfully! (renderer: ${renderer})`
+                    : 'PDF rendered successfully!',
+                'success'
+            );
+        } catch {
+            updateStatus('PDF rendered successfully!', 'success');
+        }
     } catch (error) {
         console.error('Failed to display PDF:', error);
         throw new Error('Failed to display PDF: ' + error.message);
