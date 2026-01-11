@@ -11,6 +11,7 @@ import {
 import { createLogger, createTimings } from './logging.js';
 import { renderMermaidBlocksToSvgAssets } from './mermaid.js';
 import { mountAndRewriteImages } from './assets.js';
+import { rewriteEmojiToTwemojiImages } from './emoji.js';
 import { markdownToTypstFallback, markdownToTypstWithCmarker } from './typst-doc.js';
 import { loadSidecar } from './sidecar.js';
 
@@ -56,6 +57,30 @@ async function ensureTypstPackageRegistry($typst) {
     try {
         const TypstSnippet = globalThis.TypstSnippet;
         if (!TypstSnippet || typeof $typst?.use !== 'function') return;
+
+        // Ensure a predictable set of fonts is available.
+        // The Typst runtime defaults to `defaultAssets = ["text"]`, which does NOT
+        // include any sans-serif family. In particular, `Roboto` lives in the `cjk`
+        // asset bundle. Without this, requests like `#set text(font: "Roboto")` will
+        // silently fall back (often to a serif), making font demo fixtures misleading.
+        if (typeof TypstSnippet.loadFonts === 'function') {
+            // Include `text` so we don't depend on default loader behavior.
+            // Include `cjk` to get Roboto + additional families.
+            // Load fixture-local fonts only when rendering fixtures; `dist/` builds
+            // typically don't include `test/`, so unconditional loading would 404.
+
+            const srcParam = urlParams.get('src') || '';
+            const isFixtureDoc = srcParam.startsWith('test/fixtures/') || srcParam.includes('/test/fixtures/');
+            const extraFontUrls = [];
+
+            if (isFixtureDoc) {
+                const interRegular = new URL('test/fixtures/fonts/Inter-Regular.ttf', window.location.href).toString();
+                const interBold = new URL('test/fixtures/fonts/Inter-Bold.ttf', window.location.href).toString();
+                extraFontUrls.push(interRegular, interBold);
+            }
+
+            $typst.use(TypstSnippet.loadFonts(extraFontUrls, { assets: ['text', 'cjk'] }));
+        }
 
         $typst.use(TypstSnippet.fetchPackageRegistry());
         if (typeof $typst.prepareUse === 'function') {
@@ -185,6 +210,14 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         markTiming('mermaid:done');
         debugLog('mermaid: done', { assets: svgAssets.length });
 
+        // Emoji rendering: rewrite emoji characters into Twemoji SVG images.
+        // Disable with frontmatter `emoji: false` or `?emoji=0`.
+        const emojiParam = urlParams.get('emoji');
+        const emojiEnabled = emojiParam === '0' ? false : metadata?.emoji !== false;
+        const markdownWithEmojiImages = rewriteEmojiToTwemojiImages(transformedMarkdown, {
+            enabled: emojiEnabled,
+        });
+
         updateStatus('Compiling to PDF with Typst WASM...');
         const $typst = await waitForTypst();
         markTiming('typst:ready');
@@ -229,7 +262,17 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         };
 
         // Fetch + mount external/local images into shadow FS and rewrite Markdown to those paths.
-        let markdownForTypst = await buildMarkdownForTypst({ jpegMode: userJpegMode });
+        const buildMarkdownForTypstFrom = async (md, { jpegMode }) => {
+            return await mountAndRewriteImages(md, documentUrl, $typst, {
+                markTiming,
+                debugLog,
+                incCounter,
+                timings,
+                jpegMode,
+            });
+        };
+
+        let markdownForTypst = await buildMarkdownForTypstFrom(markdownWithEmojiImages, { jpegMode: userJpegMode });
 
         debugLog('images: mounted', {
             total: timings.counters.imagesTotal ?? 0,
@@ -352,7 +395,7 @@ async function compileToPDF(markdownContent, documentUrl = null) {
             if (hadJpeg && !alreadyTranscoding) {
                 updateStatus('Retrying with JPEG transcoding...');
                 try {
-                    markdownForTypst = await buildMarkdownForTypst({ jpegMode: 'transcode' });
+                    markdownForTypst = await buildMarkdownForTypstFrom(markdownWithEmojiImages, { jpegMode: 'transcode' });
 
                     markTiming('typst:convert:start');
                     if (useFallback) {

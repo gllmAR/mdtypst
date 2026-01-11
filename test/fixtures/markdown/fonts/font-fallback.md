@@ -2,4 +2,4 @@
 
 This is **bold** text and *italic* text.
 
-Without the variants, it should fall back to regular.
+This fixture demonstrates a font fallback chain (the first font name is intentionally missing).

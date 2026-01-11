@@ -36,6 +36,18 @@ export function resolveLocalAsset(src, documentUrl) {
         if (u.origin === 'https://github.com' || u.origin === 'https://www.github.com') {
           return null;
         }
+
+        // Twemoji SVGs: keep a stable, readable path so Typst can treat them specially.
+        // Supported examples:
+        // - https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/<code>.svg
+        // - https://twemoji.maxcdn.com/v/latest/svg/<code>.svg
+        // - https://cdnjs.cloudflare.com/ajax/libs/twemoji/<ver>/svg/<code>.svg
+        const twemojiMatch = u.pathname.match(/\/svg\/([0-9a-f-]+)\.svg$/i);
+        if (twemojiMatch) {
+          const code = String(twemojiMatch[1]).toLowerCase();
+          const shadowPath = `/assets/twemoji/${code}.svg`;
+          return { fetchUrl: src, shadowPath };
+        }
       } catch {
         // ignore
       }

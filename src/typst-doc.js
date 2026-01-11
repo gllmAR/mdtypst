@@ -160,7 +160,15 @@ export function markdownToTypstWithCmarker(
 
   typst += `#cmarker.render(\n`;
   typst += `  ${markdownExpr},\n`;
-  typst += `  scope: (image: (source, alt: none, format: auto) => image(source, alt: alt, format: format))\n`;
+  typst += `  scope: (\n`;
+  typst += `    image: (source, alt: none, format: auto) => {\n`;
+  typst += `      if source.starts-with("/assets/twemoji/") {\n`;
+  typst += `        box(image(source, alt: alt, format: format, width: 1em, height: 1em))\n`;
+  typst += `      } else {\n`;
+  typst += `        image(source, alt: alt, format: format)\n`;
+  typst += `      }\n`;
+  typst += `    }\n`;
+  typst += `  )\n`;
   typst += `)\n`;
 
   return typst;
@@ -314,6 +322,9 @@ function markdownInlineToTypst(text) {
     const src = String(img.src || '').trim();
     if (!src) return '';
     const srcForTypst = src.startsWith('/') ? src : `/${src}`;
+    if (srcForTypst.startsWith('/assets/twemoji/')) {
+      return `#box(image("${escapeTypstString(srcForTypst)}", width: 1em, height: 1em))`;
+    }
     return `#image("${escapeTypstString(srcForTypst)}")`;
   });
 
@@ -436,7 +447,9 @@ export function markdownToTypstFallback(
     if (!line) return false;
     const t = String(line).trim();
     if (!t.includes('-') || !t.includes('|')) return false;
-    return /^\|?\s*:?[-]{3,}:?\s*(\|\s*:?[-]{3,}:?\s*)+\|?$/.test(t);
+    // Allow 1+ dashes to support width-hint fixtures like `|-|--------|-|`.
+    // Note: GFM requires 3+ dashes; we treat <3 as a non-standard but intentional hint.
+    return /^\|?\s*:?[-]{1,}:?\s*(\|\s*:?[-]{1,}:?\s*)+\|?$/.test(t);
   };
 
   const splitPipeRow = (line) => {
@@ -487,6 +500,20 @@ export function markdownToTypstFallback(
       else aligns.push('left');
     }
     return aligns;
+  };
+
+  const parseColumnWeightsFromSeparator = (separatorLine, columnCount) => {
+    const parts = splitPipeRow(separatorLine);
+    const weights = [];
+    let hasNonGfmWidthHint = false;
+    for (let c = 0; c < columnCount; c++) {
+      const seg = String(parts[c] ?? '').trim();
+      const dashCount = (seg.match(/-/g) || []).length;
+      const w = Math.max(1, dashCount);
+      weights.push(w);
+      if (dashCount > 0 && dashCount < 3) hasNonGfmWidthHint = true;
+    }
+    return hasNonGfmWidthHint ? weights : null;
   };
 
   const parseBlocksFromLines = (sourceLines) => {
@@ -650,10 +677,12 @@ export function markdownToTypstFallback(
         );
 
         const align = parseAlignments(separatorLine, columnCount);
+        const columnWeights = parseColumnWeightsFromSeparator(separatorLine, columnCount);
         blocks.push({
           type: 'table',
           columnCount,
           align,
+          columnWeights,
           header: headerCells,
           rows: bodyRows,
         });
@@ -802,7 +831,11 @@ export function markdownToTypstFallback(
       } else if (b.type === 'image') {
         const resolved = resolveLocalAsset(b.src, documentUrl);
         const srcForTypst = resolved?.shadowPath || (b.src.startsWith('/') ? b.src : `/${b.src}`);
-        out += `#image("${escapeTypstString(srcForTypst)}")\n\n`;
+        if (String(srcForTypst).startsWith('/assets/twemoji/')) {
+          out += `#box(image("${escapeTypstString(srcForTypst)}", width: 1em, height: 1em))\n\n`;
+        } else {
+          out += `#image("${escapeTypstString(srcForTypst)}")\n\n`;
+        }
       } else if (b.type === 'math') {
         const raw = `$$\n${b.content}\n$$`;
         out += `#raw("${escapeTypstString(raw)}")\n\n`;
@@ -812,13 +845,18 @@ export function markdownToTypstFallback(
         const cols = Number(b.columnCount) || 1;
         const align = Array.isArray(b.align) ? b.align : [];
         const alignList = Array.from({ length: cols }, (_v, idx) => align[idx] || 'left');
+        const weights = Array.isArray(b.columnWeights) ? b.columnWeights : null;
+        const columnsExpr = weights && weights.length
+          ? `(${weights.slice(0, cols).map((w) => `${Math.max(1, Number(w) || 1)}fr`).join(', ')})`
+          : `(1fr,) * ${cols}`;
 
         const cells = [];
         const header = Array.isArray(b.header) ? b.header : [];
+        const headerCells = [];
         for (let c = 0; c < cols; c++) {
           const raw = header[c] ?? '';
           const content = inline(String(raw));
-          cells.push(`[*${content}*]`);
+          headerCells.push(`[*${content}*]`);
         }
 
         const rows = Array.isArray(b.rows) ? b.rows : [];
@@ -831,8 +869,9 @@ export function markdownToTypstFallback(
         }
 
         out += `#table(\n`;
-        out += `  columns: (1fr,) * ${cols},\n`;
+        out += `  columns: ${columnsExpr},\n`;
         out += `  align: (${alignList.join(', ')}),\n`;
+        out += `  table.header(\n    ${headerCells.join(',\n    ')}\n  ),\n`;
         out += `  ${cells.join(',\n  ')}\n`;
         out += `)\n\n`;
       }
@@ -874,7 +913,8 @@ export function rewriteMarkdownPipeTablesToTablem(markdown) {
     if (!t.includes('-') || !t.includes('|')) return false;
     // Match pipes with --- segments, allowing optional colons for alignment.
     // Examples: | --- | ---: | :---: |
-    return /^\|?\s*:?[-]{3,}:?\s*(\|\s*:?[-]{3,}:?\s*)+\|?$/.test(t);
+    // Allow 1+ dashes to support width-hint fixtures like `|-|--------|-|`.
+    return /^\|?\s*:?[-]{1,}:?\s*(\|\s*:?[-]{1,}:?\s*)+\|?$/.test(t);
   };
 
   const splitPipeRow = (line) => {
@@ -920,8 +960,30 @@ export function rewriteMarkdownPipeTablesToTablem(markdown) {
   const normalizePipeRow = (cells) => `| ${cells.join(' | ')} |`;
 
   const normalizeSeparatorRow = (line) => {
-    const segs = splitPipeRow(line).map((s) => s.trim());
+    const segs = splitPipeRow(line).map((s) => {
+      const seg = String(s).trim();
+      const left = seg.startsWith(':');
+      const right = seg.endsWith(':');
+      const dashCount = (seg.match(/-/g) || []).length;
+      // Keep table header detection stable by normalizing to at least 3 dashes.
+      const normalizedDashCount = Math.max(3, dashCount || 0);
+      const core = '-'.repeat(normalizedDashCount);
+      return `${left ? ':' : ''}${core}${right ? ':' : ''}`;
+    });
     return normalizePipeRow(segs);
+  };
+
+  const columnWeightsFromSeparator = (separatorLine, columnCount) => {
+    const parts = splitPipeRow(separatorLine);
+    const weights = [];
+    let hasNonGfmWidthHint = false;
+    for (let c = 0; c < columnCount; c++) {
+      const seg = String(parts[c] ?? '').trim();
+      const dashCount = (seg.match(/-/g) || []).length;
+      weights.push(Math.max(1, dashCount));
+      if (dashCount > 0 && dashCount < 3) hasNonGfmWidthHint = true;
+    }
+    return hasNonGfmWidthHint ? weights : null;
   };
 
   const normalizeDataRow = (line) => {
@@ -941,6 +1003,10 @@ export function rewriteMarkdownPipeTablesToTablem(markdown) {
     if (!inFence && isTableRowLine(line) && isTableSeparatorLine(lines[i + 1] || '')) {
       // Capture contiguous table block.
       const tableLines = [line, lines[i + 1]];
+      const separatorLine = lines[i + 1];
+      const headerCells = splitPipeRow(line);
+      const columnCount = Math.max(1, headerCells.length);
+      const columnWeights = columnWeightsFromSeparator(separatorLine, columnCount);
       i += 2;
       while (i < lines.length && isTableRowLine(lines[i])) {
         tableLines.push(lines[i]);
@@ -964,7 +1030,12 @@ export function rewriteMarkdownPipeTablesToTablem(markdown) {
       out.push('');
 
       out.push('<!--raw-typst');
-      out.push('#tablem[');
+      if (columnWeights) {
+        const columnsExpr = `(${columnWeights.map((w) => `${Math.max(1, Number(w) || 1)}fr`).join(', ')})`;
+        out.push(`#tablem(columns: ${columnsExpr})[`);
+      } else {
+        out.push('#tablem[');
+      }
       out.push(...converted);
       out.push(']');
       out.push('-->');

@@ -1,4 +1,4 @@
-# Extended Latin with Inter
+# Extended Latin
 
 ## European Languages
 
