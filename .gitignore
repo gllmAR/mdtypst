@@ -7,6 +7,9 @@ node_modules/
 vendor/
 dist/
 
+# Optional reference repos
+third_party/
+
 # Test outputs
 test/output/
 

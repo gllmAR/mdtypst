@@ -10,6 +10,7 @@
     "test:clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('test/output',{recursive:true,force:true}))\"",
     "offline:prepare": "node scripts/offline-prepare.mjs",
     "fixtures:manifest": "node scripts/generate-fixture-manifest.mjs",
+    "templates:clone": "node scripts/clone-typst-templates.mjs",
     "build:pages": "node scripts/build-pages.mjs",
     "perf": "node test/run-perf.mjs"
   },

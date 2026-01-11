@@ -21,10 +21,20 @@ async function walk(dir) {
 
 export async function generateFixtureManifest({ repoRoot, outFile } = {}) {
   const root = repoRoot || repoRootFromScriptUrl();
-  const fixturesDir = path.join(root, 'test', 'fixtures');
+  const sources = [path.join(root, 'test', 'fixtures'), path.join(root, 'examples')];
 
-  const files = await walk(fixturesDir);
-  const rel = files
+  const allFiles = [];
+  for (const dir of sources) {
+    try {
+      // Skip missing directories (e.g. when examples/ isn't present).
+      await fs.access(dir);
+      allFiles.push(...(await walk(dir)));
+    } catch {
+      // ignore
+    }
+  }
+
+  const rel = allFiles
     .map((abs) => path.relative(root, abs))
     .map((p) => p.split(path.sep).join('/'))
     .filter((p) => p.endsWith('.md'))

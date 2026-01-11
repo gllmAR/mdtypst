@@ -11,7 +11,7 @@ import {
 import { createLogger, createTimings } from './logging.js';
 import { renderMermaidBlocksToSvgAssets } from './mermaid.js';
 import { mountAndRewriteImages } from './assets.js';
-import { markdownToTypstFallback, markdownToTypstWithCmarker } from './typst-doc.js';
+import { markdownToTypstFallback, markdownToTypstWithCmarker, typstMdtypstContextFromMetadata } from './typst-doc.js';
 import { loadSidecar } from './sidecar.js';
 
 // Flag used by the root entrypoint (`render.js`) and the fixture harness to
@@ -199,7 +199,11 @@ async function compileToPDF(markdownContent, documentUrl = null) {
         const hasTemplate = Boolean(templateText && String(templateText).trim());
         lastTemplateUrl = hasTemplate ? sidecar?.url || null : null;
         if (hasTemplate && typeof $typst.mapShadow === 'function') {
-            await $typst.mapShadow('/mdtypst/template.typ', encoder.encode(String(templateText)));
+            // Typst evaluates #include/#import targets in an isolated scope.
+            // To let templates access the mdtypst metadata dictionary, inject it at the top.
+            const contextPrelude = typstMdtypstContextFromMetadata(metadata);
+            const mountedTemplate = `${contextPrelude}\n${String(templateText)}`;
+            await $typst.mapShadow('/mdtypst/template.typ', encoder.encode(mountedTemplate));
         }
 
         const nativeTemplateMode = hasTemplate;

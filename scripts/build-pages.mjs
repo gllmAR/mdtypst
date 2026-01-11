@@ -61,6 +61,12 @@ async function main() {
     await copyDir(fixturesDir, path.join(distDir, 'test', 'fixtures'));
   }
 
+  // Include curated examples alongside fixtures.
+  const examplesDir = path.join(repoRoot, 'examples');
+  if (await pathExists(examplesDir)) {
+    await copyDir(examplesDir, path.join(distDir, 'examples'));
+  }
+
   // Generate a manifest that index.html can fetch in both dev and Pages builds.
   await generateFixtureManifest({ repoRoot, outFile: path.join(distDir, 'fixtures-manifest.json') });
 

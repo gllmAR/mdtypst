@@ -28,7 +28,7 @@ function typstLiteral(value, { allowRaw = false } = {}) {
   return `"${escapeTypstString(s)}"`;
 }
 
-function typstMdtypstContextFromMetadata(metadata) {
+export function typstMdtypstContextFromMetadata(metadata) {
   const margin = metadata?.margin;
   const marginX = metadata?.margin_x ?? metadata?.marginX;
   const marginY = metadata?.margin_y ?? metadata?.marginY;

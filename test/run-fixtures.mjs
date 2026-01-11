@@ -10,11 +10,10 @@ import { chromium } from 'playwright';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const fixturesMarkdownRoot = 'test/fixtures/markdown';
 
 function parseArgs(argv) {
   const args = {
-    pattern: 'test/fixtures/markdown/**/*.md',
+    patterns: null,
     outDir: 'test/output',
     writePdf: true,
     headful: false,
@@ -25,7 +24,10 @@ function parseArgs(argv) {
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--pattern' && argv[i + 1]) args.pattern = argv[++i];
+    if (a === '--pattern' && argv[i + 1]) {
+      if (!args.patterns) args.patterns = [];
+      args.patterns.push(argv[++i]);
+    }
     else if (a === '--out' && argv[i + 1]) args.outDir = argv[++i];
     else if (a === '--write-pdf') args.writePdf = true;
     else if (a === '--headful') args.headful = true;
@@ -42,12 +44,6 @@ async function listMarkdownFiles(globPattern) {
   // We intentionally keep this dependency-free.
   if (!globPattern.includes('/**/')) {
     const rel = globPattern.replaceAll('\\', '/');
-    if (!rel.startsWith(`${fixturesMarkdownRoot}/`)) {
-      throw new Error(
-        `Unsupported --pattern. Must be under ${fixturesMarkdownRoot}/ (got: ${globPattern})`,
-      );
-    }
-
     const abs = path.resolve(repoRoot, rel);
     const st = await fs.stat(abs).catch(() => null);
     if (!st) throw new Error(`--pattern not found: ${globPattern}`);
@@ -348,18 +344,11 @@ async function runOne(page, baseUrl, srcPath, { timeoutMs, writePdf, outDir, ren
     }
 
     if (writePdf) {
-      // Mirror the folder structure under test/fixtures/markdown so outputs are easy to locate.
-      // Example:
-      //   srcPath: test/fixtures/markdown/basic/links.md
-      //   outDir:  test/output
-      //   out:     test/output/basic/links.pdf
-      const relativeFromMarkdownRoot = path
-        .relative(fixturesMarkdownRoot, srcPath)
-        .replaceAll(path.sep, '/');
-      const relativeOut = relativeFromMarkdownRoot.startsWith('..')
-        ? srcPath
-        : relativeFromMarkdownRoot;
-      const outRelPdf = relativeOut.replace(/\.md$/i, '.pdf');
+      // Preserve input directory structure under outDir.
+      // Examples:
+      // - test/fixtures/markdown/basic/links.md -> test/output/test/fixtures/markdown/basic/links.pdf
+      // - examples/article.md                  -> test/output/examples/article.pdf
+      const outRelPdf = srcPath.replace(/\.md$/i, '.pdf');
       const outPath = path.resolve(repoRoot, outDir, outRelPdf);
       await fs.mkdir(path.dirname(outPath), { recursive: true });
       await fs.writeFile(outPath, pdf);
@@ -376,9 +365,14 @@ async function runOne(page, baseUrl, srcPath, { timeoutMs, writePdf, outDir, ren
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  const files = await listMarkdownFiles(args.pattern);
+  const patterns = (args.patterns && args.patterns.length)
+    ? args.patterns
+    : ['test/fixtures/markdown/**/*.md', 'examples/**/*.md'];
+
+  const fileLists = await Promise.all(patterns.map((p) => listMarkdownFiles(p)));
+  const files = Array.from(new Set(fileLists.flat())).sort();
   if (files.length === 0) {
-    console.error(`No files matched --pattern ${args.pattern}`);
+    console.error(`No files matched --pattern ${patterns.join(' ')}`);
     process.exit(2);
   }
 
