@@ -7,136 +7,134 @@
     <link rel="modulepreload" href="./vendor/typst/index.js">
     <link rel="modulepreload" href="./render.js">
     <style>
+        html, body {
+            height: 100%;
+        }
         body {
             margin: 0;
-            padding: 20px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #f5f5f5;
+            background: #111;
+            color: #eee;
         }
         #container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        #fixtures-panel {
-            margin: 10px 0 20px;
-            padding: 10px 12px;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            background: #fafafa;
-        }
-        #fixtures-panel summary {
-            cursor: pointer;
-            font-weight: 600;
-        }
-        #fixtures-status {
-            color: #555;
-            margin: 8px 0;
-        }
-        #fixtures-tree {
-            max-height: 320px;
-            overflow: auto;
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            padding: 10px 12px;
-        }
-        #fixtures-tree details {
-            margin: 4px 0;
-        }
-        #fixtures-tree summary {
-            cursor: pointer;
-        }
-        #fixtures-tree a {
-            color: #1976d2;
-            text-decoration: none;
-        }
-        #fixtures-tree a:hover {
-            text-decoration: underline;
-        }
-        .fixtures-leaf {
-            margin: 3px 0 3px 18px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.95em;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
         }
         #status {
-            padding: 15px;
-            margin-bottom: 20px;
+            padding: 10px 12px;
             border-radius: 4px;
-            background: #e3f2fd;
-            color: #1976d2;
+            background: #1e1e1e;
+            color: #ddd;
+            border-bottom: 1px solid #2a2a2a;
+            border-radius: 0;
+            font-size: 13px;
+            overflow: hidden;
+            max-height: 80px;
+            opacity: 1;
+            transform: translateY(0);
+            transition:
+                max-height 250ms ease,
+                opacity 250ms ease,
+                padding-top 250ms ease,
+                padding-bottom 250ms ease,
+                transform 250ms ease;
+        }
+        #status.collapsed {
+            max-height: 0;
+            opacity: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            transform: translateY(-6px);
         }
         #status.error {
-            background: #ffebee;
-            color: #c62828;
+            background: #2a1414;
+            color: #ffb4b4;
         }
         #status.success {
-            background: #e8f5e9;
-            color: #2e7d32;
+            background: #142a1b;
+            color: #b4ffd0;
+        }
+        #pdf-container {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 10px;
+            position: relative;
         }
         #pdf-viewer {
             width: 100%;
-            height: 800px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+            height: 100%;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            background: #fff;
         }
         .button-group {
-            margin-top: 20px;
             display: flex;
             gap: 10px;
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            z-index: 10;
+
+            opacity: 0;
+            transform: translateY(-4px);
+            transition: opacity 200ms ease, transform 200ms ease;
+            pointer-events: none;
+        }
+        #pdf-container:hover .button-group,
+        #pdf-container.show-controls .button-group {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .icon-btn {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+        }
+        .icon-btn svg {
+            width: 18px;
+            height: 18px;
         }
         button {
             padding: 10px 20px;
-            background: #1976d2;
+            background: #2d6cdf;
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 14px;
         }
         button:hover {
-            background: #1565c0;
+            background: #255cc2;
         }
         button:disabled {
             background: #bdbdbd;
             cursor: not-allowed;
         }
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
     </style>
 </head>
 <body>
     <div id="container">
-        <h1>mdtypst v0.9</h1>
-        <p>Statically hosted, URL-driven Markdown→PDF renderer</p>
-
-        <details id="fixtures-panel">
-            <summary>Examples (fixtures)</summary>
-            <div id="fixtures-status">Expand to load fixture list…</div>
-            <div id="fixtures-tree" aria-live="polite"></div>
-            <p style="margin: 10px 0 0; color: #666; font-size: 0.9em;">
-                Tip: open <a href="index.html">index.html</a> for a dedicated browser.
-            </p>
-        </details>
-
         <div id="status">Initializing...</div>
         <div id="pdf-container" style="display: none;">
             <iframe id="pdf-viewer"></iframe>
             <div class="button-group">
-                <button id="download-btn">Download PDF</button>
+                <button id="download-btn" class="icon-btn" aria-label="Download PDF" title="Download PDF">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M12 3v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M8 11l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
@@ -167,123 +165,6 @@
 
             await loadModuleScript(renderJs);
         })();
-    </script>
-
-    <script type="module">
-        const panel = document.getElementById('fixtures-panel');
-        const statusEl = document.getElementById('fixtures-status');
-        const treeEl = document.getElementById('fixtures-tree');
-
-        let loaded = false;
-
-        function buildTree(paths) {
-            const root = { kind: 'dir', children: new Map() };
-
-            for (const fullPath of paths) {
-                const parts = String(fullPath).split('/').filter(Boolean);
-                let node = root;
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i];
-                    const isLeaf = i === parts.length - 1;
-                    if (!node.children.has(part)) {
-                        node.children.set(part, isLeaf ? { kind: 'file', path: fullPath } : { kind: 'dir', children: new Map() });
-                    }
-                    node = node.children.get(part);
-                }
-            }
-
-            return root;
-        }
-
-        function navigateToFixture(path) {
-            const u = new URL(window.location.href);
-            const params = new URLSearchParams(u.search);
-            params.set('src', path);
-            u.search = params.toString();
-            window.location.href = u.toString();
-        }
-
-        function renderNode(node, name = '') {
-            if (node.kind === 'file') {
-                const div = document.createElement('div');
-                div.className = 'fixtures-leaf';
-
-                const a = document.createElement('a');
-                a.href = '#';
-                a.textContent = name;
-                a.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    navigateToFixture(node.path);
-                });
-
-                div.appendChild(a);
-                return div;
-            }
-
-            const details = document.createElement('details');
-            details.open = false;
-            const summary = document.createElement('summary');
-            summary.textContent = name;
-            details.appendChild(summary);
-
-            const entries = Array.from(node.children.entries());
-            entries.sort(([aName, aNode], [bName, bNode]) => {
-                if (aNode.kind !== bNode.kind) return aNode.kind === 'dir' ? -1 : 1;
-                return aName.localeCompare(bName);
-            });
-
-            for (const [childName, childNode] of entries) {
-                details.appendChild(renderNode(childNode, childName));
-            }
-
-            return details;
-        }
-
-        async function loadFixturesOnce() {
-            if (loaded) return;
-            loaded = true;
-
-            statusEl.textContent = 'Loading fixture list…';
-            try {
-                const resp = await fetch('./fixtures-manifest.json', { cache: 'no-store' });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                const data = await resp.json();
-                const files = Array.isArray(data?.files) ? data.files : [];
-
-                const mdFiles = files
-                    .map(String)
-                    .filter((p) => p.endsWith('.md'))
-                    .filter((p) => p.startsWith('test/fixtures/'))
-                    .sort();
-
-                if (mdFiles.length === 0) {
-                    statusEl.textContent = 'No fixtures found in manifest.';
-                    return;
-                }
-
-                statusEl.textContent = `Loaded ${mdFiles.length} Markdown fixtures.`;
-
-                // Render relative to test/fixtures/ for a cleaner tree.
-                const rel = mdFiles.map((p) => p.replace(/^test\/fixtures\//, ''));
-                const tree = buildTree(rel.map((p) => `test/fixtures/${p}`));
-
-                const container = document.createElement('div');
-                const entries = Array.from(tree.children.entries());
-                entries.sort(([a], [b]) => a.localeCompare(b));
-                for (const [topName, topNode] of entries) {
-                    container.appendChild(renderNode(topNode, topName));
-                }
-                treeEl.replaceChildren(container);
-            } catch (e) {
-                statusEl.textContent = 'Failed to load fixture list (fixtures-manifest.json not found).';
-                treeEl.textContent = '';
-                console.warn(e);
-            }
-        }
-
-        panel?.addEventListener('toggle', () => {
-            if (panel.open) loadFixturesOnce();
-        });
     </script>
 </body>
 </html>

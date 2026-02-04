@@ -4,8 +4,13 @@ This document describes how mdtypst turns Markdown into a PDF in a fully static,
 
 ## Entry points
 
+- `index.html`
+  - Landing page + fixture browser (dev/testing UI).
+  - Loads `fixtures-manifest.json` to present a clickable tree of Markdown fixtures/examples.
+  - Opens the renderer by navigating to `render.html?src=...`.
+
 - `render.html`
-  - UI shell (status banner + PDF iframe + download button).
+  - Ultra-thin renderer shell (status banner + PDF iframe + download button).
   - Bootstraps Typst runtime loading:
     - prefers `./vendor/typst/index.js`
     - falls back to the CDN bundle for `@myriaddreamin/typst-all-in-one.ts`

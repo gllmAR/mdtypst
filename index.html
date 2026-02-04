@@ -169,6 +169,37 @@
             font-family: 'Courier New', monospace;
             font-size: 0.95em;
         }
+
+        .render-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 14px;
+            align-items: center;
+            margin: 12px 0 14px;
+            padding: 10px 12px;
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+        .render-options label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #444;
+            font-size: 0.95em;
+            user-select: none;
+        }
+        .render-options select,
+        .render-options input[type="text"] {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 0.95em;
+        }
+        .render-options .hint {
+            color: #666;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
@@ -206,6 +237,35 @@
         <div class="fixtures-browser">
             <h2>Fixture Browser (Examples)</h2>
             <p style="margin: 0; color: #555;">Browse the repository's Markdown fixtures and render them in your browser. Clicking a file opens <code>render.html</code> with <code>?src=...</code>.</p>
+
+            <div class="render-options" aria-label="Render options">
+                <label>
+                    Open
+                    <select id="opt-open" title="What to do after rendering">
+                        <option value="">Viewer UI</option>
+                        <option value="1">PDF (same tab)</option>
+                        <option value="tab">PDF (new tab, best-effort)</option>
+                    </select>
+                </label>
+
+                <label>
+                    <input id="opt-download" type="checkbox" />
+                    Auto-download (best-effort)
+                </label>
+
+                <label>
+                    <input id="opt-keep-status" type="checkbox" />
+                    Keep status banner
+                </label>
+
+                <label>
+                    Filename
+                    <input id="opt-filename" type="text" placeholder="optional" style="width: 200px;" />
+                </label>
+
+                <span class="hint">Applies to fixture links below.</span>
+            </div>
+
             <div id="fixtures-status" class="fixtures-status">Loading fixture list…</div>
             <div id="fixtures-tree" class="fixtures-tree" aria-live="polite"></div>
         </div>
@@ -266,6 +326,29 @@
         const statusEl = document.getElementById('fixtures-status');
         const treeEl = document.getElementById('fixtures-tree');
 
+        const optOpen = document.getElementById('opt-open');
+        const optDownload = document.getElementById('opt-download');
+        const optKeepStatus = document.getElementById('opt-keep-status');
+        const optFilename = document.getElementById('opt-filename');
+
+        let lastFixtureFiles = null;
+
+        function buildRenderHref(srcPath) {
+            const params = new URLSearchParams();
+            params.set('src', srcPath);
+
+            const open = String(optOpen?.value || '').trim();
+            if (open) params.set('open', open);
+
+            if (optDownload?.checked) params.set('download', '1');
+            if (optKeepStatus?.checked) params.set('keepStatus', '1');
+
+            const filename = String(optFilename?.value || '').trim();
+            if (filename) params.set('filename', filename);
+
+            return `render.html?${params.toString()}`;
+        }
+
         function buildTree(paths) {
             const root = { kind: 'dir', children: new Map() };
 
@@ -290,7 +373,7 @@
                 const div = document.createElement('div');
                 div.className = 'fixtures-leaf';
                 const a = document.createElement('a');
-                a.href = `render.html?src=${encodeURIComponent(node.path)}`;
+                a.href = buildRenderHref(node.path);
                 a.textContent = name;
                 div.appendChild(a);
                 return div;
@@ -333,6 +416,8 @@
                     return;
                 }
 
+                lastFixtureFiles = mdFiles;
+
                 statusEl.textContent = `Loaded ${mdFiles.length} Markdown fixtures.`;
 
                 // Render relative to test/fixtures/ for a cleaner tree.
@@ -352,6 +437,27 @@
                 console.warn(e);
             }
         }
+
+        function rerenderTreeIfLoaded() {
+            if (!Array.isArray(lastFixtureFiles) || lastFixtureFiles.length === 0) return;
+
+            // Render relative to test/fixtures/ for a cleaner tree.
+            const rel = lastFixtureFiles.map((p) => p.replace(/^test\/fixtures\//, ''));
+            const tree = buildTree(rel.map((p) => `test/fixtures/${p}`));
+
+            const container = document.createElement('div');
+            const entries = Array.from(tree.children.entries());
+            entries.sort(([a], [b]) => a.localeCompare(b));
+            for (const [topName, topNode] of entries) {
+                container.appendChild(renderNode(topNode, topName));
+            }
+            treeEl.replaceChildren(container);
+        }
+
+        optOpen?.addEventListener('change', rerenderTreeIfLoaded);
+        optDownload?.addEventListener('change', rerenderTreeIfLoaded);
+        optKeepStatus?.addEventListener('change', rerenderTreeIfLoaded);
+        optFilename?.addEventListener('input', rerenderTreeIfLoaded);
 
         loadFixtures();
     </script>

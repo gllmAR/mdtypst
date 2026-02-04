@@ -34,9 +34,48 @@ const pdfContainer = document.getElementById('pdf-container');
 const pdfViewer = document.getElementById('pdf-viewer');
 const downloadBtn = document.getElementById('download-btn');
 
+let controlsHideTimer = null;
+
+function showViewerControls({ sticky = false } = {}) {
+    try {
+        if (!pdfContainer) return;
+        pdfContainer.classList.add('show-controls');
+
+        if (controlsHideTimer) {
+            clearTimeout(controlsHideTimer);
+            controlsHideTimer = null;
+        }
+
+        if (!sticky) {
+            controlsHideTimer = setTimeout(() => {
+                try {
+                    pdfContainer.classList.remove('show-controls');
+                } catch {
+                    // ignore
+                }
+            }, 1000);
+        }
+    } catch {
+        // ignore
+    }
+}
+
 const urlParams = new URLSearchParams(window.location.search);
 // Debug logging is enabled by default; disable with ?debug=0.
 const debugEnabled = urlParams.get('debug') !== '0';
+
+// By default, the renderer hides the status banner after a successful render
+// so the PDF viewer can take the full viewport. Opt out with ?keepStatus=1.
+const keepStatus = urlParams.get('keepStatus') === '1';
+
+// Output behavior controls.
+// - ?download=1: best-effort auto download after render
+// - ?open=1: open the generated PDF in the same tab (replaces the UI)
+// - ?open=tab: try to open in a new tab/window (may be blocked), otherwise fall back to same-tab
+// - ?filename=foo.pdf: suggested download filename
+const autoDownload = urlParams.get('download') === '1';
+const openMode = (urlParams.get('open') || '').trim();
+const downloadFilenameParam = (urlParams.get('filename') || '').trim();
 
 // Lightweight trace for observing rendering decisions.
 // Enable with ?trace=1 (logs + window.__mdtypst_trace).
@@ -52,8 +91,16 @@ const { debugLog, markTiming, incCounter } = createLogger({ debugEnabled, timing
  * Update status message
  */
 function updateStatus(message, type = 'info') {
-    statusEl.textContent = message;
-    statusEl.className = type;
+    // Ensure the banner is visible when we emit progress/errors.
+    try {
+        statusEl.style.display = '';
+        statusEl.classList.remove('collapsed');
+        statusEl.classList.remove('error', 'success', 'info');
+        statusEl.classList.add(type);
+        statusEl.textContent = message;
+    } catch {
+        // ignore
+    }
 }
 
 async function ensureTypstPackageRegistry($typst, { extraFontUrls = [] } = {}) {
@@ -672,7 +719,11 @@ function displayPDF(pdfData) {
         }
         
         pdfViewer.src = pdfUrl;
-        pdfContainer.style.display = 'block';
+        // render.html styles pdf-container as a flex column; preserve that.
+        pdfContainer.style.display = 'flex';
+
+        // Make the download affordance discoverable without stealing space.
+        showViewerControls({ sticky: false });
         
         markTiming('pdf:displayed');
         try {
@@ -691,6 +742,46 @@ function displayPDF(pdfData) {
         } catch {
             updateStatus('PDF rendered successfully!', 'success');
         }
+
+        // Optional output behaviors (best-effort; browser policies may apply).
+        if (autoDownload) {
+            try {
+                const url = URL.createObjectURL(pdfBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = guessPdfFilename();
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch {
+                // ignore
+            }
+        }
+
+        if (openMode === '1' || openMode === 'tab') {
+            // Give the viewer a moment to bind to the blob URL before navigating.
+            setTimeout(() => {
+                try {
+                    openGeneratedPdfUrl(pdfUrl);
+                } catch {
+                    // ignore
+                }
+            }, 0);
+            return;
+        }
+
+        if (!keepStatus) {
+            // Allow a short moment for the user to see the success message,
+            // then roll up the banner to maximize PDF viewport.
+            setTimeout(() => {
+                try {
+                    statusEl.classList.add('collapsed');
+                } catch {
+                    // ignore
+                }
+            }, 250);
+        }
     } catch (error) {
         console.error('Failed to display PDF:', error);
         throw new Error('Failed to display PDF: ' + error.message);
@@ -706,11 +797,37 @@ function downloadPDF() {
     const url = URL.createObjectURL(pdfBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'document.pdf';
+    a.download = guessPdfFilename();
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+function guessPdfFilename() {
+    const explicit = downloadFilenameParam;
+    if (explicit) return explicit.toLowerCase().endsWith('.pdf') ? explicit : `${explicit}.pdf`;
+
+    try {
+        const src = String(urlParams.get('src') || '').trim();
+        if (!src) return 'document.pdf';
+        const u = new URL(src, window.location.href);
+        const base = (u.pathname.split('/').pop() || '').replace(/\.[a-z0-9]+$/i, '');
+        return base ? `${base}.pdf` : 'document.pdf';
+    } catch {
+        return 'document.pdf';
+    }
+}
+
+function openGeneratedPdfUrl(pdfUrl) {
+    if (!pdfUrl) return;
+    if (openMode === 'tab') {
+        // May be blocked by popup blockers; fall back to same-tab if needed.
+        const w = window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+        if (w) return;
+    }
+    // Replace UI with the PDF itself (most immersive; browser-native viewer + download).
+    window.location.replace(pdfUrl);
 }
 
 /**
@@ -738,6 +855,11 @@ async function main() {
         
         // Setup download button
         downloadBtn.addEventListener('click', downloadPDF);
+
+        // Viewer controls: show on interaction, auto-hide.
+        // Works for mouse (hover/move) and touch (tap).
+        pdfContainer?.addEventListener('pointermove', () => showViewerControls({ sticky: false }));
+        pdfContainer?.addEventListener('pointerdown', () => showViewerControls({ sticky: false }));
         
     } catch (error) {
         updateStatus(error.message, 'error');

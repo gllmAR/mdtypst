@@ -7,6 +7,10 @@ The main entrypoint is:
 
 - `render.html?src=URL_OR_PATH`
 
+For local development and fixture browsing, open:
+
+- `index.html` (a landing page + fixture browser that links into `render.html?src=...`)
+
 
 Markdown is rendered inside Typst via `@preview/cmarker` when Typst package imports are available; otherwise a minimal built-in Markdown→Typst fallback renderer is used. Mermaid code fences are rendered client-side to SVG and embedded into the Typst document. A minimal JS loader orchestrates fetch, WASM init, and output delivery.
 
@@ -34,6 +38,20 @@ Open:
 - `math` (optional): `0` disables TeX math processing in the fallback renderer.
 - `debug` (optional): `0` disables debug logging (default is enabled).
 - `noFallback` (optional): `1` disables retrying with the fallback renderer if Typst compilation fails.
+- `keepStatus` (optional): `1` keeps the status banner visible after successful render (by default it auto-hides to maximize PDF space).
+- `download` (optional): `1` attempts to auto-download the generated PDF after render (best-effort; some browsers may require a user gesture).
+- `open` (optional): `1` opens the generated PDF directly (replaces the UI); `tab` tries to open a new tab/window (may be blocked).
+- `filename` (optional): suggested download filename (default: derived from `src`, else `document.pdf`).
+
+### Clickable examples (local dev)
+
+These links assume `npm run serve` (default: `http://localhost:8000`). When deployed, replace the origin with your site’s URL.
+
+- [Render sample](http://localhost:8000/render.html?src=sample.md)
+- [Open PDF directly (replace UI)](http://localhost:8000/render.html?src=sample.md&open=1)
+- [Auto-download (best-effort)](http://localhost:8000/render.html?src=sample.md&download=1&filename=sample.pdf)
+- [Open in new tab (best-effort)](http://localhost:8000/render.html?src=sample.md&open=tab)
+- [Keep status banner visible](http://localhost:8000/render.html?src=sample.md&keepStatus=1)
 
 ### Sidecar document description (styling)
 
@@ -76,8 +94,9 @@ Minimal example (`foo.mdtypst.typ`):
 
 ## Architecture
 
-- `render.html` loads the Typst runtime (vendored first, CDN fallback) and then loads `render.js`.
+- `render.html` is the ultra-thin renderer shell: it loads the Typst runtime (vendored first, CDN fallback) and then loads `render.js`.
 - `render.js` is a stable entrypoint that imports the modular implementation in `src/render-main.js`.
+- `index.html` is a separate dev/testing UI (fixture browser) that navigates to `render.html?src=...`.
 
 More detail: see `docs/ARCHITECTURE.md`.
 
